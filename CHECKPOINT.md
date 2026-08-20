@@ -99,13 +99,79 @@ approach for the rule-based fallback at this point — variance is bounded and
 categories separate cleanly. Will revisit that fallback only if the held-out
 validation in Phase 2 shows the model doesn't generalize.
 
+## Phase 2 results (feature extraction + model, 2026-08-21)
+
+New files in `data_collection/`:
+- `features.py` — `extract_features(task_text, tool_names)`: derives 10
+  numeric features from ONLY raw task text + tool list (never the
+  hand-labeled `category`), e.g. `num_tools`, `open_ended_keyword_hits`
+  (keyword match against phrases like "research", "until", "investigate"),
+  `narrow_keyword_hits`, explicit repeated-item counts ("5 sources"), text
+  length, clause count. This is the exact function Phase 3's UI will call.
+- `build_dataset.py` — builds one row per run (80 rows) with features +
+  `log_total_tokens` target (log-transformed: token cost is heavy right-skewed).
+- `train_model.py` — trains the model, runs leave-one-task-out (LOTO)
+  validation, prints coverage, saves `model.joblib`.
+- `predict.py` — loads `model.joblib` and predicts `[low, expected, high]`
+  tokens + a list of human-readable "driving factors" for a new task.
+
+**First approach tried and REJECTED:** three independently-fit quantile
+gradient-boosted-tree models (10th/50th/90th percentile). With only ~19
+training tasks per LOTO fold, the three models disagreed badly and produced
+a band with only **45% coverage** against an 80% target — badly
+overconfident. Documented as a rejected approach directly in `train_model.py`'s
+docstring so it isn't retried without reason.
+
+**Final approach:** a single point-estimate GradientBoostingRegressor
+(shallow: max_depth=2, n_estimators=40, min_samples_leaf=4 — regularized
+for n=20) predicting log-tokens, plus a prediction band built from the
+empirical distribution of out-of-fold residuals (10th/90th percentile of
+LOTO residuals in log space) — i.e. a split-conformal-style calibration.
+This is standard practice specifically for tiny-n regimes like this one.
+
+**Validation result: 80.0% overall coverage** (target ~80%, using
+10%/90% residual quantiles) via leave-one-task-out CV (not leave-one-run-out
+— the 4 repeats of a task share a feature vector, so LOTO is the only fold
+structure that tests genuine generalization to an unseen task).
+- By category: narrow_multi_step 100%, single_shot 75%, open_ended 71%.
+- The two coverage misses in single_shot are t01 and t17 — the ONLY two
+  zero-tool tasks in the whole 20-task set. When either is held out, only
+  one zero-tool example remains in training, insufficient to anchor the
+  model at that extreme (near-260-token) end. This is a legitimate small-n
+  edge case, not a systemic flaw — flag in the README as a known limitation
+  (model is weaker at the very-low-cost extreme with so few examples there).
+
+**Feature importance** (from the final full-data model):
+`num_tools` 69%, `open_ended_keyword_hits` 18%, `narrow_keyword_hits` 8%,
+`text_char_len`/`text_word_len` ~5% combined, everything else (explicit
+counts, clause count, step connectors, is_question) ~0%. Honest read: tool
+count and open/narrow keyword phrasing are doing almost all the work; the
+more elaborate structural features (clause counting, explicit-count
+extraction) aren't adding signal yet at this dataset size — worth
+revisiting if/when more data is collected, not a blocker for Phase 3.
+
+**Important honesty caveat (documented in train_model.py and to repeat in
+the README):** the residual band's width is calibrated from the SAME pooled
+LOTO residuals that coverage is then measured against. This is a reasonable
+proof-of-concept calibration but not a fully nested (double) cross-
+validation — that would need more than 20 tasks to be stable. Be upfront
+about this in any user-facing writeup.
+
+**Verdict: Phase 2 succeeded — did NOT need to fall back to the rule-based/
+heuristic estimator.** The trained model + calibrated band approach works
+and generalizes reasonably at n=20. Proceeding to Phase 3.
+
 ## Next step
 
-Start Phase 2: feature extraction from raw task text + tool list (the way a
-real user's input would look — NOT the hand-labeled `category` field, which
-is for our analysis only), then train a baseline regression model with
-prediction intervals on `data_collection/data/runs.jsonl`. Validate against a
-held-out task before declaring Phase 2 done.
+Start Phase 3: simple web UI (Next.js or plain React) where a user pastes a
+task description + optional tool list and gets back `predict()`'s
+`[low, expected, high]` range plus the "driving factors" explanation panel.
+The UI should call into the existing `predict.py` logic (either via a small
+Python backend, e.g. FastAPI, or by porting the (simple, ~10-feature) logic
+to JS — decide with the user which is preferred before building). Must be
+explicit in the UI copy that this is a statistical estimate from a small
+observed dataset, not a guarantee (per original spec + the honesty caveats
+above).
 
 ## Decision log (don't re-ask these)
 

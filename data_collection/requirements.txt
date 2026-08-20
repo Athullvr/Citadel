@@ -3,3 +3,5 @@ numpy>=2.0
 pandas>=2.0
 scikit-learn>=1.9
 joblib>=1.5
+fastapi>=0.141
+uvicorn[standard]>=0.52
