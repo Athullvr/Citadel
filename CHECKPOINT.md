@@ -1,7 +1,7 @@
 # Project Checkpoint — Pre-Execution AI Agent Cost Predictor
 
 **Last updated:** 2026-08-21
-**Status:** Phase 1 (data collection pipeline) is BUILT and SMOKE-TESTED, not yet run at full scale.
+**Status:** Phase 1 COMPLETE. Full data collection (80 runs) done, zero failures. Ready to start Phase 2 (feature extraction + baseline model).
 
 ## What this project is
 
@@ -57,38 +57,62 @@ This already demonstrates the "context accumulates every turn" cost driver
 the whole product is built around. Smoke-test output file was deleted after
 inspection (`data/smoke_test.jsonl` no longer exists — don't expect to find it).
 
-## Decision pending / next action
+## Phase 1 results (full collection, 2026-08-21)
 
-**We were about to run the FULL paid data collection** (20 tasks x 3-5
-repeats against the real Sonnet 5 API) when the user paused to switch IDEs.
+Ran `run_collection.py --runs-per-task 4` -> 20 tasks x 4 repeats = **80 runs,
+0 failures, 0 runs hit the 15-turn cap**. Output: `data_collection/data/runs.jsonl`
+(80 JSON lines, one per run, full per-turn token breakdown included).
 
-- User already declined switching to Haiku to save cost (explicitly chose to
-  keep Sonnet 5 — see decision log below). Do not re-ask this.
-- Options still on the table, not yet decided:
-  1. Full collection, 4 repeats/task = 80 runs, est. **$3-7**
-  2. Full collection, 5 repeats/task = 100 runs, est. **$5-10**
-  3. Smaller pilot first, 10 tasks x 3 repeats = 30 runs, est. **$1-3**
-  4. User runs it themselves via `python run_collection.py` (venv + API key
-     already set up; just `cd data_collection && source .venv/Scripts/activate
-     && python run_collection.py --runs-per-task 4`)
+Actual cost: **~$3.94** (563,363 input tokens, 150,199 output tokens, no
+prompt caching used in the runner — real cost would be lower with caching).
 
-**Next step when resuming:** ask the user which of the above to do, then
-(if delegated back to Claude) run `run_collection.py` with the chosen
-`--runs-per-task`, writing to `data_collection/data/runs.jsonl` (default
-path — don't overwrite with a different name unless asked).
+Mean total tokens per run, by hand-labeled category (for our own reference
+only — not a feature fed to any model):
 
-After the full collection completes, the deliverable per the "how to work"
-instructions is: show the user what was collected/learned, and confirm
-before moving to Phase 2 (feature extraction + baseline model). If the
-real data turns out too noisy/small for a real trained model, the fallback
-per the original spec is to pivot to a transparent rule-based/heuristic
-estimator instead, leading with the feature-explanation angle.
+| Category | Avg tokens/run | Range across tasks |
+|---|---|---|
+| single_shot (0-1 tools) | ~1,556 | 260 – 3,526 |
+| narrow_multi_step (1-3 tools) | ~6,478 | 2,172 – 12,032 |
+| open_ended (2-5 tools) | ~19,078 | 8,453 – 38,728 |
+
+Per-task within-task variance (coefficient of variation across the 4 repeats
+of the same task) was mostly low-to-moderate: 1-25%, no task above 25%. This
+is a good sign — it means a prediction-interval model has a real shot at
+being useful rather than fighting pure noise.
+
+Notable findings to carry into Phase 2:
+- Categories separate by roughly an order of magnitude each — strong signal
+  that task-level features (not just tool count) predict cost.
+- Tool count correlates with cost but is NOT sufficient alone: task t07
+  (single tool, "look up population of France", single_shot) hit up to 4,167
+  tokens on one run — higher than several narrow_multi_step tasks with more
+  tools. Open-ended language ("keep searching until...", "research", "then
+  revise") appears to matter as much as raw tool count.
+- Highest-variance tasks were t04 (research 3 sources, CV 22.4%) and t07
+  (CV 25.3%) — worth inspecting turn-by-turn if the model underperforms on
+  similar tasks later.
+- No runs were truncated by the 15-turn safety cap, so no data was lost to
+  that ceiling.
+
+**Verdict: dataset looks usable for Phase 2.** Not abandoning the trained-model
+approach for the rule-based fallback at this point — variance is bounded and
+categories separate cleanly. Will revisit that fallback only if the held-out
+validation in Phase 2 shows the model doesn't generalize.
+
+## Next step
+
+Start Phase 2: feature extraction from raw task text + tool list (the way a
+real user's input would look — NOT the hand-labeled `category` field, which
+is for our analysis only), then train a baseline regression model with
+prediction intervals on `data_collection/data/runs.jsonl`. Validate against a
+held-out task before declaring Phase 2 done.
 
 ## Decision log (don't re-ask these)
 
 - Model for data collection: **Sonnet 5** (`claude-sonnet-5`), explicitly
   chosen by user over Haiku 4.5 despite Haiku being ~2x cheaper.
-- Repeats-per-task and whether to pilot-first: **not yet decided** (see above).
+- Repeats-per-task: **4**, chosen by user (80 total runs) over a 3-repeat
+  pilot or 5-repeat larger run.
 
 ## Environment notes
 
