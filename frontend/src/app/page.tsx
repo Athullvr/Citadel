@@ -271,6 +271,48 @@ export default function Home() {
             </p>
           </section>
         )}
+
+        {examples.length > 0 && (
+          <section className="flex flex-col gap-4 border-t border-zinc-200 pt-10 dark:border-zinc-800">
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                How this compares to real runs
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                4 real leave-one-task-out examples: the model never saw these tasks during
+                training for this prediction, so this is a genuine test of generalization —
+                including the misses.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {examples.map((ex) => (
+                <div
+                  key={ex.task_id}
+                  className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm text-zinc-800 dark:text-zinc-200">{ex.task_text}</p>
+                    <span
+                      className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
+                        ex.verdict === "hit"
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                          : "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                      }`}
+                    >
+                      {ex.verdict}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {ex.category} · {ex.tools_available.length} tool(s): {ex.tools_available.join(", ") || "none"}
+                  </p>
+                  <ComparisonBar example={ex} />
+                  <p className="text-xs leading-5 text-zinc-600 dark:text-zinc-400">{ex.note}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

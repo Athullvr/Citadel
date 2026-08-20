@@ -1,7 +1,7 @@
 # Project Checkpoint — Pre-Execution AI Agent Cost Predictor
 
 **Last updated:** 2026-08-21
-**Status:** Phase 1, 2, and 3 COMPLETE. Web UI built, running, and verified in a real browser. Ready to start Phase 4 (validation/demo polish).
+**Status:** ALL 4 PHASES COMPLETE. Full MVP built, running, and verified end-to-end in a real browser: data collection -> trained model -> FastAPI backend -> Next.js UI with a "how this compares to real runs" section -> top-level README with honest limitations.
 
 ## What this project is
 
@@ -207,21 +207,62 @@ Playwright itself was installed as a scratch devDependency in a temp dir for
 this one verification pass, NOT added to `frontend/package.json` — it's not
 a project dependency, just how the UI was smoke-tested this session.
 
-## Next step
+## Phase 4 results (validation/demo polish, 2026-08-21)
 
-Start Phase 4: validation/demo polish.
-- Add a "here's how this compares to actual runs" section (to the frontend
-  or a section of the eventual README) showing 3-4 real examples from
-  `data_collection/data/runs.jsonl` where the prediction matched (or
-  notably didn't match, e.g. the open_ended undershoot noted above) what
-  actually happened.
-- Write the top-level README: core technical bet (feature-based prediction,
-  not simulation), architecture (data collection -> features -> conformal-
-  style band -> FastAPI -> Next.js), and be explicit about limitations:
-  small dataset (20 tasks/80 runs), single model family (Claude Sonnet only,
-  agent behavior on other models may differ), doesn't handle multi-agent
-  loops, band calibration is proof-of-concept (not nested CV), weaker
-  calibration at the very-low-cost extreme and for open_ended tasks.
+New file: `data_collection/generate_examples.py` — reruns leave-one-task-out
+validation and writes 4 hand-picked genuinely-out-of-fold comparison
+examples to `data_collection/data/validation_examples.json`:
+- **t15** (narrow_multi_step) — hit: predicted 4,192–12,949–26,476 vs. actual
+  9,950–13,734.
+- **t04** (open_ended) — hit: predicted 3,885–12,001–24,538 vs. actual
+  6,204–10,642.
+- **t05** (open_ended) — miss (underestimate): predicted high of 31,302
+  exceeded by actual 33,581–46,075. This is the open_ended weak-calibration
+  failure mode made concrete.
+- **t17** (single_shot, zero tools) — miss (overestimate): predicted
+  363–2,291 vs. actual 253–279. This is the zero-tool small-n edge case
+  made concrete.
+
+Deliberately picked 2 hits + 2 misses (not all hits) so the demo is honest
+about where the model is weak, not just where it looks good.
+
+Backend: added `GET /api/validation-examples` to `backend/main.py`, serving
+this JSON file directly (static/precomputed, not computed live per-request).
+
+Frontend: added a "How this compares to real runs" section to
+`frontend/src/app/page.tsx` below the interactive predictor. Each example
+renders as a card with the task text, category/tools, a log-scale bar
+showing the predicted band (gray) vs. the actual observed min/max (green
+markers for hits, red for misses), and the honest explanatory note. Verified
+in a real headless-Chromium session (Playwright, scratch/temp install, not
+added to `frontend/package.json`) — renders correctly, zero console errors,
+screenshot confirmed the hits visually land inside the gray band and misses
+visually land outside it.
+
+Wrote top-level `README.md` covering: the competitive gap this targets
+(reactive cost-governance tools vs. this being pre-execution/predictive),
+the core technical bet (feature-based statistical prediction, not
+simulation, and why — agent behavior is architecturally unpredictable to
+simulate exactly), the rejected quantile-GBM approach and why the
+conformal-style residual-band approach was used instead, full architecture
+map, how to run every piece, the validation results (numbers same as Phase
+2/3 above), and an explicit "known limitations" section (small dataset,
+single model family / Sonnet-5-only, no multi-agent support, non-nested band
+calibration, weaker at cost extremes and for open_ended tasks).
+
+**All 4 phases of the original spec are now complete.** The project is a
+working, honestly-caveated MVP: real data collection pipeline -> validated
+model (80% LOTO coverage) -> FastAPI backend -> Next.js UI with both a live
+predictor and a "compared to real runs" transparency section -> README.
+
+Possible future directions (not started, no commitment made):
+- Collect more tasks/repeats to test whether structural features (explicit
+  counts, clause counting — currently ~0% importance) start contributing
+  with more data, and to get a properly nested (double) cross-validation.
+- Add more zero-tool and heavily-iterative-open-ended tasks specifically,
+  since those are the two identified weak spots.
+- Test whether the model transfers to other model families (e.g. GPT, other
+  Claude models) or degrades — currently 100% Sonnet-5-only data.
 
 ## Decision log (don't re-ask these)
 
