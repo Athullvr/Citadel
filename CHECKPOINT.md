@@ -1,7 +1,7 @@
 # Project Checkpoint — Pre-Execution AI Agent Cost Predictor
 
 **Last updated:** 2026-08-21
-**Status:** Phase 1 COMPLETE. Full data collection (80 runs) done, zero failures. Ready to start Phase 2 (feature extraction + baseline model).
+**Status:** Phase 1 and Phase 2 COMPLETE. Model trained and validated (80% coverage). Ready to start Phase 3 (web UI).
 
 ## What this project is
 
