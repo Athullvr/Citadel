@@ -1,7 +1,7 @@
 # Project Checkpoint — Pre-Execution AI Agent Cost Predictor
 
 **Last updated:** 2026-08-21
-**Status:** ALL 4 PHASES COMPLETE. Full MVP built, running, and verified end-to-end in a real browser: data collection -> trained model -> FastAPI backend -> Next.js UI with a "how this compares to real runs" section -> top-level README with honest limitations.
+**Status:** ALL 4 PHASES COMPLETE, plus deployment packaging. Full MVP built, running, and verified end-to-end in a real browser: data collection -> trained model -> FastAPI backend -> Next.js UI with a "how this compares to real runs" section -> top-level README with honest limitations -> Dockerfile for the backend, built and verified.
 
 ## What this project is
 

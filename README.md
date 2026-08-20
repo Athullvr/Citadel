@@ -78,6 +78,30 @@ npm run dev
 # open http://localhost:3000
 ```
 
+## Deployment
+
+- **Frontend**: deploy `frontend/` to **Vercel** (native Next.js support,
+  zero-config). Set `NEXT_PUBLIC_API_BASE` to the deployed backend URL.
+- **Backend**: deploy the container built from `backend/Dockerfile` to a
+  container host (**Render**, **Fly.io**, or **Railway**) — not a serverless
+  Python function host, since scikit-learn/numpy/pandas's combined size and
+  cold-start cost are a poor fit for that model. Build from the **repo
+  root** (the Dockerfile needs `data_collection/`'s inference files):
+
+  ```bash
+  docker build -f backend/Dockerfile -t agent-cost-predictor-api .
+  docker run -p 8000:8000 -e ALLOWED_ORIGINS=https://your-frontend.vercel.app agent-cost-predictor-api
+  ```
+
+  The image copies only the inference path (`features.py`, `predict.py`,
+  `tools.py`, `model.joblib`, `validation_examples.json`) — not the training
+  scripts (`agent_runner.py`, `train_model.py`, `run_collection.py`, the
+  `anthropic` SDK, or the full `runs.jsonl` dataset), since none of those are
+  needed to serve predictions. Set the `ALLOWED_ORIGINS` env var to your
+  deployed frontend's URL (comma-separated for multiple origins) so CORS
+  allows it; most container hosts inject `PORT` automatically, which the
+  image's `CMD` already respects.
+
 To regenerate the dataset/model from scratch (costs real API money against
 Claude Sonnet 5 — roughly $4 for the full 80-run collection used here):
 

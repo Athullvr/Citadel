@@ -7,6 +7,7 @@ never silently drift from what was actually trained/validated.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-DATA_COLLECTION_DIR = Path(__file__).resolve().parent.parent / "data_collection"
+# In local dev, data_collection/ sits next to backend/. In the Docker image,
+# only the inference-relevant files are copied to /app/data_collection (see
+# backend/Dockerfile) -- DATA_COLLECTION_DIR lets both layouts work unchanged.
+DATA_COLLECTION_DIR = Path(
+    os.environ.get("DATA_COLLECTION_DIR", str(Path(__file__).resolve().parent.parent / "data_collection"))
+)
 sys.path.insert(0, str(DATA_COLLECTION_DIR))
 
 from predict import load_bundle, predict as run_predict  # noqa: E402
@@ -22,9 +28,12 @@ from tools import TOOL_SCHEMAS  # noqa: E402
 
 app = FastAPI(title="Agent Cost Predictor API")
 
+# Comma-separated list, e.g. "https://cost-predictor.vercel.app,http://localhost:3000"
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
