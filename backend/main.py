@@ -6,6 +6,7 @@ features.py, model.joblib) -- deliberately NOT reimplemented here, so the UI can
 never silently drift from what was actually trained/validated.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -58,6 +59,15 @@ def list_tools():
 def predict(req: PredictRequest):
     result = run_predict(req.task_text, req.tools, bundle=_bundle)
     return result
+
+
+@app.get("/api/validation-examples")
+def validation_examples():
+    """4 real leave-one-task-out examples (data_collection/generate_examples.py)
+    showing where the model's predicted range matched -- and where it
+    missed -- an actual observed run. Static/precomputed, not live."""
+    path = DATA_COLLECTION_DIR / "data" / "validation_examples.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @app.get("/api/health")

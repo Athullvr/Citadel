@@ -1,7 +1,7 @@
 # Project Checkpoint — Pre-Execution AI Agent Cost Predictor
 
 **Last updated:** 2026-08-21
-**Status:** Phase 1 and Phase 2 COMPLETE. Model trained and validated (80% coverage). Ready to start Phase 3 (web UI).
+**Status:** Phase 1, 2, and 3 COMPLETE. Web UI built, running, and verified in a real browser. Ready to start Phase 4 (validation/demo polish).
 
 ## What this project is
 
@@ -161,17 +161,67 @@ about this in any user-facing writeup.
 heuristic estimator.** The trained model + calibrated band approach works
 and generalizes reasonably at n=20. Proceeding to Phase 3.
 
+## Phase 3 results (web UI, 2026-08-21)
+
+Architecture decision: user chose **FastAPI backend + Next.js frontend**
+(over porting the model logic to JS) specifically to avoid any risk of the
+JS reimplementation silently drifting from the sklearn model actually
+validated in Phase 2.
+
+New locations:
+- `backend/main.py` — FastAPI app. Adds `data_collection/` to `sys.path` and
+  imports `predict.py`/`features.py`/`model.joblib` DIRECTLY (no copy, no
+  duplication) so the API can never diverge from the validated model.
+  Endpoints: `GET /api/tools` (tool list for the UI picker, from
+  `tools.py`'s `TOOL_SCHEMAS`), `POST /api/predict` (task_text + tools ->
+  low/expected/high + driving_factors + raw features), `GET /api/health`.
+  CORS allowed for `http://localhost:3000`. Run with:
+  `cd backend && ../data_collection/.venv/Scripts/activate && uvicorn main:app --port 8000`
+  (fastapi + uvicorn were added to `data_collection/requirements.txt` and
+  installed into the existing venv — no separate backend venv).
+- `frontend/` — standard `create-next-app` scaffold (Next.js 16, TypeScript,
+  Tailwind, App Router, `src/` dir). The actual UI is entirely in
+  `frontend/src/app/page.tsx` (client component): a textarea for task text,
+  a checkbox grid for the 7 tools (fetched from `/api/tools`), a "Predict
+  cost range" button that POSTs to `/api/predict`, a log-scale range-bar
+  visualization (low/expected/high), and a "Why this estimate" bullet list
+  driven by `driving_factors` from the API. Explicit copy in the UI states
+  this is a statistical estimate from an 80-run/20-task dataset, not a
+  guarantee. Run with `cd frontend && npm run dev` (port 3000). Reads
+  backend URL from `NEXT_PUBLIC_API_BASE` env var, defaults to
+  `http://localhost:8000`.
+
+**Verified working end-to-end in a real headless-Chromium browser session**
+(via a scratch Playwright script, not just curl/typecheck): tool checkboxes
+populate from the API, submitting a task renders the range bar and driving
+factors, zero console errors. Screenshots confirmed visually. For the same
+"research 5 sources -> report -> 3 emails" task used in the Phase 1 smoke
+test, the UI predicted 4,054–12,524–25,608 tokens (actual observed range for
+that exact task in Phase 1 data was 33,581–46,075 for t05, and 4,227–26,697
+via the CLI `predict.py` for a near-identical rephrased task) — in the right
+order of magnitude but on the low side for this particular open-ended task;
+consistent with the known open_ended category being the weakest-calibrated
+band (71% coverage from Phase 2).
+
+Playwright itself was installed as a scratch devDependency in a temp dir for
+this one verification pass, NOT added to `frontend/package.json` — it's not
+a project dependency, just how the UI was smoke-tested this session.
+
 ## Next step
 
-Start Phase 3: simple web UI (Next.js or plain React) where a user pastes a
-task description + optional tool list and gets back `predict()`'s
-`[low, expected, high]` range plus the "driving factors" explanation panel.
-The UI should call into the existing `predict.py` logic (either via a small
-Python backend, e.g. FastAPI, or by porting the (simple, ~10-feature) logic
-to JS — decide with the user which is preferred before building). Must be
-explicit in the UI copy that this is a statistical estimate from a small
-observed dataset, not a guarantee (per original spec + the honesty caveats
-above).
+Start Phase 4: validation/demo polish.
+- Add a "here's how this compares to actual runs" section (to the frontend
+  or a section of the eventual README) showing 3-4 real examples from
+  `data_collection/data/runs.jsonl` where the prediction matched (or
+  notably didn't match, e.g. the open_ended undershoot noted above) what
+  actually happened.
+- Write the top-level README: core technical bet (feature-based prediction,
+  not simulation), architecture (data collection -> features -> conformal-
+  style band -> FastAPI -> Next.js), and be explicit about limitations:
+  small dataset (20 tasks/80 runs), single model family (Claude Sonnet only,
+  agent behavior on other models may differ), doesn't handle multi-agent
+  loops, band calibration is proof-of-concept (not nested CV), weaker
+  calibration at the very-low-cost extreme and for open_ended tasks.
 
 ## Decision log (don't re-ask these)
 
@@ -179,6 +229,9 @@ above).
   chosen by user over Haiku 4.5 despite Haiku being ~2x cheaper.
 - Repeats-per-task: **4**, chosen by user (80 total runs) over a 3-repeat
   pilot or 5-repeat larger run.
+- Phase 3 architecture: **FastAPI backend + Next.js frontend**, chosen by
+  user over porting model logic to JS, specifically to avoid drift risk
+  between the validated Python model and a hand-ported JS reimplementation.
 
 ## Environment notes
 

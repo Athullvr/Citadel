@@ -1,0 +1,82 @@
+[
+  {
+    "task_id": "t15",
+    "task_text": "Investigate a customer complaint about slow shipping by searching our support documentation, then draft a response email addressing their concern.",
+    "tools_available": [
+      "web_search",
+      "read_document",
+      "send_email"
+    ],
+    "category": "narrow_multi_step",
+    "actual_tokens_observed": [
+      9950,
+      11869,
+      12574,
+      13734
+    ],
+    "pred_low": 4192,
+    "pred_expected": 12949,
+    "pred_high": 26476,
+    "verdict": "hit",
+    "note": "Predicted range comfortably contained the actual cost -- a narrow_multi_step task with a clear, bounded set of steps (read files, calculate) is the kind of task this model handles best."
+  },
+  {
+    "task_id": "t04",
+    "task_text": "Research the topic 'renewable energy storage trends' across 3 sources and write a short summary of what you find.",
+    "tools_available": [
+      "web_search",
+      "fetch_url"
+    ],
+    "category": "open_ended",
+    "actual_tokens_observed": [
+      6204,
+      6989,
+      9977,
+      10642
+    ],
+    "pred_low": 3885,
+    "pred_expected": 12001,
+    "pred_high": 24538,
+    "verdict": "hit",
+    "note": "Open-ended research task, correctly flagged as higher-cost by the open-ended-keyword feature, and the actual outcome landed inside the predicted band."
+  },
+  {
+    "task_id": "t05",
+    "task_text": "Research this topic across 5 sources, synthesize into a report, then draft 3 follow-up emails to relevant stakeholders based on the findings. Topic: 'the impact of remote work on commercial real estate demand'.",
+    "tools_available": [
+      "web_search",
+      "fetch_url",
+      "draft_document",
+      "send_email"
+    ],
+    "category": "open_ended",
+    "actual_tokens_observed": [
+      33581,
+      36613,
+      38641,
+      46075
+    ],
+    "pred_low": 4956,
+    "pred_expected": 15309,
+    "pred_high": 31302,
+    "verdict": "miss (underestimate)",
+    "note": "The model's high estimate was exceeded: this task chains research -> synthesis -> 3 separate emails, and the real run's context compounded faster across turns than the model predicted. open_ended tasks are the weakest-calibrated category overall (71% LOTO coverage vs the 80% target) -- this is that failure mode in practice."
+  },
+  {
+    "task_id": "t17",
+    "task_text": "What is the capital of Australia?",
+    "tools_available": [],
+    "category": "single_shot",
+    "actual_tokens_observed": [
+      253,
+      258,
+      258,
+      279
+    ],
+    "pred_low": 363,
+    "pred_expected": 1120,
+    "pred_high": 2291,
+    "verdict": "miss (overestimate)",
+    "note": "A trivial zero-tool factual question. The model overshot because only 2 of the 20 training tasks have zero tools, so leaving either one out starves the model of examples at that extreme. A known small-dataset limitation, not a systemic flaw."
+  }
+]

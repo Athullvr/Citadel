@@ -14,6 +14,19 @@ type PredictResponse = {
   features: Record<string, number>;
 };
 
+type ValidationExample = {
+  task_id: string;
+  task_text: string;
+  tools_available: string[];
+  category: string;
+  actual_tokens_observed: number[];
+  pred_low: number;
+  pred_expected: number;
+  pred_high: number;
+  verdict: string;
+  note: string;
+};
+
 function formatTokens(n: number): string {
   return n.toLocaleString("en-US");
 }
@@ -47,6 +60,57 @@ function RangeBar({ low, expected, high }: { low: number; expected: number; high
   );
 }
 
+function ComparisonBar({ example }: { example: ValidationExample }) {
+  const { pred_low, pred_expected, pred_high, actual_tokens_observed } = example;
+  const actualMin = Math.min(...actual_tokens_observed);
+  const actualMax = Math.max(...actual_tokens_observed);
+
+  const domainLow = Math.min(pred_low, actualMin);
+  const domainHigh = Math.max(pred_high, actualMax);
+  const logLow = Math.log(Math.max(domainLow, 1));
+  const logHigh = Math.log(Math.max(domainHigh, domainLow + 1));
+  const toPct = (v: number) =>
+    Math.min(100, Math.max(0, ((Math.log(Math.max(v, 1)) - logLow) / (logHigh - logLow)) * 100));
+
+  const isHit = example.verdict === "hit";
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="relative h-2.5 w-full rounded-full bg-zinc-100 dark:bg-zinc-800">
+        <div
+          className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-zinc-300 dark:bg-zinc-600"
+          style={{ left: `${toPct(pred_low)}%`, width: `${toPct(pred_high) - toPct(pred_low)}%` }}
+          title={`Predicted: ${formatTokens(pred_low)} - ${formatTokens(pred_high)}`}
+        />
+        <div
+          className="absolute top-1/2 h-1 w-1 -translate-y-1/2 rounded-full bg-zinc-500 dark:bg-zinc-400"
+          style={{ left: `${toPct(pred_expected)}%` }}
+        />
+        <div
+          className={`absolute top-1/2 h-4 w-1.5 -translate-y-1/2 -translate-x-1/2 rounded-sm ${
+            isHit ? "bg-emerald-500" : "bg-rose-500"
+          }`}
+          style={{ left: `${toPct(actualMin)}%` }}
+          title={`Actual (min): ${formatTokens(actualMin)}`}
+        />
+        <div
+          className={`absolute top-1/2 h-4 w-1.5 -translate-y-1/2 -translate-x-1/2 rounded-sm ${
+            isHit ? "bg-emerald-500" : "bg-rose-500"
+          }`}
+          style={{ left: `${toPct(actualMax)}%` }}
+          title={`Actual (max): ${formatTokens(actualMax)}`}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
+        <span>Predicted: {formatTokens(pred_low)} – {formatTokens(pred_high)}</span>
+        <span className={isHit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+          Actual: {formatTokens(actualMin)} – {formatTokens(actualMax)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
@@ -56,6 +120,7 @@ export default function Home() {
   const [result, setResult] = useState<PredictResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [examples, setExamples] = useState<ValidationExample[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/tools`)
@@ -65,6 +130,11 @@ export default function Home() {
         setSelectedTools(new Set(["web_search", "fetch_url", "draft_document", "send_email"]));
       })
       .catch(() => setError("Could not reach the prediction API. Is the backend running on port 8000?"));
+
+    fetch(`${API_BASE}/api/validation-examples`)
+      .then((r) => r.json())
+      .then(setExamples)
+      .catch(() => {});
   }, []);
 
   function toggleTool(name: string) {
