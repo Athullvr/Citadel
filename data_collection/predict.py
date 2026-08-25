@@ -8,11 +8,11 @@ without changing the prediction interface.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 import joblib
 import numpy as np
 import pandas as pd
-
 from features import FEATURE_NAMES, extract_features
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -41,7 +41,7 @@ def get_bundle_path(model_id: str = DEFAULT_MODEL) -> Path:
     )
 
 
-def load_bundle(model_id: str = DEFAULT_MODEL, path: Optional[str] = None) -> dict[str, Any]:
+def load_bundle(model_id: str = DEFAULT_MODEL, path: str | None = None) -> dict[str, Any]:
     """Load and cache a calibration bundle for the given model_id."""
     if path is not None:
         bundle_path = Path(path)
@@ -113,7 +113,7 @@ def predict(
     task_text: str,
     tool_names: list[str],
     model_id: str = DEFAULT_MODEL,
-    bundle: Optional[dict[str, Any]] = None,
+    bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Predict token cost range [low, expected, high] for a given task and tool list.

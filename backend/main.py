@@ -17,7 +17,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+
 
 # Configure JSON logger
 class JsonFormatter(logging.Formatter):
@@ -37,7 +38,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
         }
         if hasattr(record, "structured_data"):
-            log_obj.update(getattr(record, "structured_data"))
+            log_obj.update(record.structured_data)
         return json.dumps(log_obj)
 
 
@@ -57,13 +58,15 @@ DATA_COLLECTION_DIR = Path(
 )
 sys.path.insert(0, str(DATA_COLLECTION_DIR))
 
-from predict import (  # noqa: E402
+from predict import (
     DEFAULT_MODEL,
     SUPPORTED_MODELS,
     load_bundle,
+)
+from predict import (
     predict as run_predict,
 )
-from tools import TOOL_SCHEMAS  # noqa: E402
+from tools import TOOL_SCHEMAS
 
 # Rate Limiter setup
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
@@ -94,8 +97,8 @@ security_scheme = HTTPBearer(auto_error=False)
 
 
 def verify_api_key(
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(security_scheme),
-) -> Optional[str]:
+    credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),  # noqa: B008
+) -> str | None:
     """Verify Bearer token against configured CITADEL_API_KEY / API_KEY."""
     expected_key = os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")
     if not expected_key:
@@ -151,7 +154,7 @@ async def structured_log_middleware(request: Request, call_next):
 try:
     load_bundle(DEFAULT_MODEL)
     logger.info(f"Loaded default calibration bundle for model '{DEFAULT_MODEL}'")
-except Exception as e:
+except (FileNotFoundError, OSError, ValueError) as e:
     logger.warning(f"Could not preload default bundle for '{DEFAULT_MODEL}': {e}")
 
 
@@ -221,7 +224,7 @@ def list_tools(request: Request):
 def predict(
     request: Request,
     req: PredictRequest,
-    _auth: Optional[str] = Depends(verify_api_key),
+    _auth: str | None = Depends(verify_api_key),
 ):
     """
     Predict token cost range [low, expected, high] for a given task and tool list.

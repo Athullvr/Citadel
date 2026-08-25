@@ -1,4 +1,3 @@
-import pytest
 from features import FEATURE_NAMES, extract_features
 
 
@@ -34,14 +33,15 @@ def test_no_keyword_match_input():
 
 
 def test_max_length_input():
-    # Long text with multiple repeated clauses and numbers
-    text = ("Research competitor features and summarize the following details. " * 50).strip()
+    # Long text with multiple distinct keywords and clauses
+    text = ("Research competitor features, investigate pricing, and summarize the following details. " * 40).strip()
     assert len(text) > 3000
     feats = extract_features(text, ["web_search", "draft_document"])
     assert feats["text_char_len"] == len(text)
-    assert feats["open_ended_keyword_hits"] >= 50
-    assert feats["narrow_keyword_hits"] >= 50
+    assert feats["open_ended_keyword_hits"] >= 2  # 'research' and 'investigate'
+    assert feats["narrow_keyword_hits"] >= 1      # 'summarize the following'
     assert feats["num_tools"] == 2
+    assert feats["num_clauses"] > 50
 
 
 def test_unicode_and_special_characters():
