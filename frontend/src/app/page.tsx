@@ -3,15 +3,20 @@
 import { useEffect, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_CITADEL_API_KEY ?? "";
 
 type Tool = { name: string; description: string };
 
 type PredictResponse = {
+  model_id: string;
   low_tokens: number;
   expected_tokens: number;
   high_tokens: number;
   driving_factors: string[];
   features: Record<string, number>;
+  confidence: "high" | "moderate" | "low";
+  out_of_distribution: boolean;
+  ood_reasons: string[];
 };
 
 type ValidationExample = {
@@ -31,9 +36,15 @@ function formatTokens(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_KEY) {
+    headers["Authorization"] = `Bearer ${API_KEY}`;
+  }
+  return headers;
+}
+
 function RangeBar({ low, expected, high }: { low: number; expected: number; high: number }) {
-  // Log scale so the expected marker position reflects proportional distance,
-  // since token cost spans orders of magnitude across task types.
   const logLow = Math.log(Math.max(low, 1));
   const logHigh = Math.log(Math.max(high, low + 1));
   const logExpected = Math.log(Math.max(expected, 1));
@@ -123,17 +134,23 @@ export default function Home() {
   const [examples, setExamples] = useState<ValidationExample[]>([]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/tools`)
+    fetch(`${API_BASE}/api/tools`, { headers: getAuthHeaders() })
       .then((r) => r.json())
       .then((data: Tool[]) => {
-        setTools(data);
-        setSelectedTools(new Set(["web_search", "fetch_url", "draft_document", "send_email"]));
+        if (Array.isArray(data)) {
+          setTools(data);
+          setSelectedTools(new Set(["web_search", "fetch_url", "draft_document", "send_email"]));
+        }
       })
       .catch(() => setError("Could not reach the prediction API. Is the backend running on port 8000?"));
 
-    fetch(`${API_BASE}/api/validation-examples`)
+    fetch(`${API_BASE}/api/validation-examples`, { headers: getAuthHeaders() })
       .then((r) => r.json())
-      .then(setExamples)
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setExamples(data);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -153,31 +170,42 @@ export default function Home() {
     try {
       const res = await fetch(`${API_BASE}/api/predict`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_text: taskText, tools: Array.from(selectedTools) }),
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          task_text: taskText,
+          tools: Array.from(selectedTools),
+          model_id: "claude-sonnet",
+        }),
       });
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail ?? `API returned HTTP ${res.status}`);
+      }
       const data: PredictResponse = await res.json();
       setResult(data);
-    } catch {
-      setError("Prediction failed. Is the backend running on port 8000?");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Prediction request failed.";
+      setError(message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black">
+    <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black min-h-screen">
       <main className="flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-16 sm:px-10">
         <header className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Pre-Execution Agent Cost Predictor
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Citadel Predict
+            </h1>
+            <span className="rounded-full bg-zinc-200 px-2.5 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              v1.0 (Claude Sonnet baseline)
+            </span>
+          </div>
           <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            Paste a task description and pick the tools an agent would have available.
-            You&apos;ll get a predicted token-cost <em>range</em> before anything runs — not a
-            single number, because agent cost is inherently variable. This is a statistical
-            estimate from a small (20-task, 80-run) observed dataset, not a guarantee.
+            Pre-execution token cost predictor for AI agent runs. Paste a task description and pick
+            available tools to receive a calibrated token range before a single token is spent.
           </p>
         </header>
 
@@ -187,11 +215,15 @@ export default function Home() {
           </label>
           <textarea
             id="task"
+            maxLength={4000}
             className="min-h-28 w-full rounded-lg border border-zinc-300 bg-white p-3 text-sm text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
             value={taskText}
             onChange={(e) => setTaskText(e.target.value)}
             placeholder="e.g. Research this topic across 5 sources and draft a report."
           />
+          <div className="text-right text-xs text-zinc-400">
+            {taskText.length} / 4000 characters
+          </div>
         </section>
 
         <section className="flex flex-col gap-3">
@@ -239,12 +271,37 @@ export default function Home() {
 
         {result && (
           <section className="flex flex-col gap-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <div>
-              <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
                 Predicted token range
               </h2>
-              <RangeBar low={result.low_tokens} expected={result.expected_tokens} high={result.high_tokens} />
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  result.confidence === "high"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                    : result.confidence === "moderate"
+                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                    : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                }`}
+              >
+                {result.confidence.toUpperCase()} CONFIDENCE
+              </span>
             </div>
+
+            <RangeBar low={result.low_tokens} expected={result.expected_tokens} high={result.high_tokens} />
+
+            {result.out_of_distribution && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  ⚠️ Out-of-Distribution Warning
+                </p>
+                <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-amber-700 dark:text-amber-300">
+                  {result.ood_reasons.map((reason, idx) => (
+                    <li key={idx}>{reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="flex flex-col gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
@@ -264,10 +321,8 @@ export default function Home() {
             </div>
 
             <p className="border-t border-zinc-100 pt-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-              This range comes from a model trained on 80 real Claude Sonnet agent runs
-              across 20 tasks, validated to hit its predicted range ~80% of the time on
-              tasks it hadn&apos;t seen. It is a statistical pattern match, not a simulation —
-              treat it as a planning estimate, not a guarantee.
+              Model: <code className="font-mono text-zinc-700 dark:text-zinc-300">{result.model_id}</code> (N=20 tasks, 80 runs baseline).
+              This is a statistical pattern match with an empirical calibration band, not an exact simulator.
             </p>
           </section>
         )}
@@ -279,9 +334,8 @@ export default function Home() {
                 How this compares to real runs
               </h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                4 real leave-one-task-out examples: the model never saw these tasks during
-                training for this prediction, so this is a genuine test of generalization —
-                including the misses.
+                4 real leave-one-task-out validation benchmarks: genuine generalization test
+                on unseen tasks (including documented misses).
               </p>
             </div>
 
