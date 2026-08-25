@@ -77,7 +77,7 @@ app = FastAPI(
     description="Pre-execution LLM token budget and cost predictor for AI agent runs",
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # CORS configuration
 raw_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
