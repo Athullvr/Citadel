@@ -88,3 +88,14 @@ That is all! The FastAPI backend automatically accepts `model_id="gemini-2.0-fla
 1. **Untouchable Sonnet Dataset**: The existing Claude Sonnet dataset (`claude-sonnet.joblib` and `data/runs.jsonl`) is finalized and will not be altered or re-run.
 2. **Feature Parity**: Any new model must use the exact 10 numerical features derived by `data_collection/features.py`.
 3. **Additive Deployment**: Adding a new model is strictly a single-file addition (`.joblib` drop-in) + single line addition in `SUPPORTED_MODELS`.
+
+---
+
+## 5. Phase 1.5a Client-Readiness Notes
+
+- **Auth Verification**: Confirmed standard `Authorization: Bearer <key>` support for plain HTTP server-to-server clients without browser-specific dependencies.
+- **Endpoints Added**: `GET /api/health` and `GET /api/version` returning `{ "status": "ok", "version": "1.0.0", "model_id": "claude-sonnet", ... }`.
+- **Standardized Error Bodies**: Configured structured `{ "error": "<type>", "message": "...", "detail": "...", "retry_after": ... }` responses across 400, 401, 422, 429, and 500 status codes.
+- **Rate-Limit Visibility**: Attached `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers.
+- **Integrity Guarantee**: Zero modifications were made to `data_collection/features.py`, calibration data, `data_collection/train_model.py`, or any model code; zero live Claude Sonnet API calls were executed.
+

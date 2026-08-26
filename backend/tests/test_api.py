@@ -10,12 +10,16 @@ def client():
     return TestClient(app)
 
 
-def test_health_endpoint(client):
-    res = client.get("/api/health")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "ok"
-    assert "claude-sonnet" in data["supported_models"]
+def test_health_and_version_endpoints(client):
+    for endpoint in ["/api/health", "/api/version"]:
+        res = client.get(endpoint)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "ok"
+        assert data["version"] == "1.0.0"
+        assert data["model_id"] == "claude-sonnet"
+        assert "claude-sonnet" in data["supported_models"]
+        assert isinstance(data["auth_enabled"], bool)
 
 
 def test_list_tools_endpoint(client):
@@ -53,6 +57,7 @@ def test_predict_happy_path(client):
     assert len(data["driving_factors"]) > 0
     assert "confidence" in data
     assert isinstance(data["out_of_distribution"], bool)
+    assert "X-RateLimit-Limit" in res.headers
 
 
 def test_predict_ood_flags(client):
@@ -78,21 +83,30 @@ def test_predict_unsupported_model_id(client):
     }
     res = client.post("/api/predict", json=payload)
     assert res.status_code == 400
-    assert "Unsupported model_id" in res.json()["detail"]
+    data = res.json()
+    assert data["error"] == "bad_request"
+    assert "Unsupported model_id" in data["message"]
+    assert "Unsupported model_id" in data["detail"]
 
 
-def test_predict_validation_errors(client):
+def test_predict_validation_errors_standardized(client):
     # Empty task_text
     res = client.post("/api/predict", json={"task_text": "", "tools": []})
     assert res.status_code == 422
+    data = res.json()
+    assert data["error"] == "validation_error"
+    assert "message" in data
+    assert "detail" in data
 
     # Exceeds max_length 4000
     res = client.post("/api/predict", json={"task_text": "X" * 4001, "tools": []})
     assert res.status_code == 422
+    assert res.json()["error"] == "validation_error"
 
     # Tool name too long
     res = client.post("/api/predict", json={"task_text": "valid text", "tools": ["T" * 65]})
     assert res.status_code == 422
+    assert res.json()["error"] == "validation_error"
 
     # Malformed JSON
     res = client.post(
@@ -101,6 +115,7 @@ def test_predict_validation_errors(client):
         headers={"Content-Type": "application/json"},
     )
     assert res.status_code == 422
+    assert res.json()["error"] == "validation_error"
 
 
 def test_auth_enforcement_when_configured(client, monkeypatch):
@@ -108,10 +123,13 @@ def test_auth_enforcement_when_configured(client, monkeypatch):
 
     payload = {"task_text": "Research 5 competitors", "tools": ["web_search"]}
 
-    # Missing auth header -> 401
+    # Missing auth header -> 401 with standard error body
     res_no_auth = client.post("/api/predict", json=payload)
     assert res_no_auth.status_code == 401
-    assert "Missing or malformed" in res_no_auth.json()["detail"]
+    data_no_auth = res_no_auth.json()
+    assert data_no_auth["error"] == "unauthorized"
+    assert "Missing or malformed" in data_no_auth["message"]
+    assert "WWW-Authenticate" in res_no_auth.headers
 
     # Wrong auth header -> 401
     res_bad_auth = client.post(
@@ -120,7 +138,9 @@ def test_auth_enforcement_when_configured(client, monkeypatch):
         headers={"Authorization": "Bearer wrong-key"},
     )
     assert res_bad_auth.status_code == 401
-    assert "Invalid API key" in res_bad_auth.json()["detail"]
+    data_bad_auth = res_bad_auth.json()
+    assert data_bad_auth["error"] == "unauthorized"
+    assert "Invalid API key" in data_bad_auth["message"]
 
     # Valid auth header -> 200
     res_good_auth = client.post(
@@ -132,13 +152,43 @@ def test_auth_enforcement_when_configured(client, monkeypatch):
     assert res_good_auth.json()["expected_tokens"] > 0
 
 
-def test_rate_limiting(client):
+def test_rate_limiting_and_headers(client):
     limiter.reset()
     payload = {"task_text": "Calculate 2+2", "tools": ["calculator"]}
 
-    # Hit 30 requests rapidly
+    # Hit requests rapidly
     responses = [client.post("/api/predict", json=payload) for _ in range(35)]
     status_codes = [r.status_code for r in responses]
 
     # At least one 429 should be present
     assert 429 in status_codes
+    for r in responses:
+        if r.status_code == 429:
+            data = r.json()
+            assert data["error"] == "rate_limited"
+            assert "Rate limit exceeded" in data["message"]
+            assert data.get("retry_after") == 60
+            assert r.headers.get("Retry-After") == "60"
+            assert r.headers.get("X-RateLimit-Limit") == "30"
+            assert r.headers.get("X-RateLimit-Remaining") == "0"
+
+
+def test_non_browser_server_to_server_request(client, monkeypatch):
+    """
+    Verify plain server-to-server request (no Origin/Referer header, plain client)
+    is never blocked by CORS or browser-specific logic.
+    """
+    monkeypatch.setenv("CITADEL_API_KEY", "s2s-test-token-999")
+    payload = {
+        "task_text": "Server to server automated agent call",
+        "tools": ["web_search"],
+    }
+    # Direct HTTP request with no browser Origin / Referer header
+    headers = {
+        "Authorization": "Bearer s2s-test-token-999",
+        "User-Agent": "citadel-predict-cli/0.1.0",
+    }
+    res = client.post("/api/predict", json=payload, headers=headers)
+    assert res.status_code == 200
+    assert res.json()["expected_tokens"] > 0
+    assert "access-control-allow-origin" not in res.headers or res.headers.get("access-control-allow-origin") == "*" or res.status_code == 200

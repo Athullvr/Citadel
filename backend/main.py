@@ -20,10 +20,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
@@ -77,7 +80,62 @@ app = FastAPI(
     description="Pre-execution LLM token budget and cost predictor for AI agent runs",
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
+
+# Standardized Error Exception Handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    code_map = {
+        400: "bad_request",
+        401: "unauthorized",
+        403: "forbidden",
+        404: "not_found",
+        422: "validation_error",
+        429: "rate_limited",
+        500: "internal_server_error",
+    }
+    error_type = code_map.get(exc.status_code, "http_error")
+    detail_str = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    body: dict[str, Any] = {
+        "error": error_type,
+        "message": detail_str,
+        "detail": jsonable_encoder(exc.detail),
+    }
+    headers = dict(exc.headers or {})
+    return JSONResponse(status_code=exc.status_code, content=body, headers=headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    errors = jsonable_encoder(exc.errors())
+    msg = "; ".join(
+        f"{'.'.join(str(loc) for loc in err.get('loc', []))}: {err.get('msg', '')}"
+        for err in errors
+    )
+    body: dict[str, Any] = {
+        "error": "validation_error",
+        "message": msg or "Invalid request parameters",
+        "detail": errors,
+    }
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=body)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    retry_after = 60
+    body: dict[str, Any] = {
+        "error": "rate_limited",
+        "message": f"Rate limit exceeded: {exc.detail}",
+        "detail": f"Rate limit exceeded: {exc.detail}",
+        "retry_after": retry_after,
+    }
+    headers = {
+        "Retry-After": str(retry_after),
+        "X-RateLimit-Limit": "30",
+        "X-RateLimit-Remaining": "0",
+    }
+    return JSONResponse(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content=body, headers=headers)
+
 
 # CORS configuration
 raw_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
@@ -105,29 +163,36 @@ def verify_api_key(
         # Auth not configured -> open access (dev/demo mode)
         return None
 
-    if not credentials or credentials.scheme.lower() != "bearer":
+    if not credentials or credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or malformed Authorization header. Expected 'Bearer <API_KEY>'",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if credentials.credentials != expected_key:
+    if credentials.credentials.strip() != expected_key.strip():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return credentials.credentials
+    return credentials.credentials.strip()
 
 
-# Middleware for Structured JSON Request Logging
+# Middleware for Structured JSON Request Logging & Rate-Limit Visibility
 @app.middleware("http")
 async def structured_log_middleware(request: Request, call_next):
     start_time = time.perf_counter()
     response = await call_next(request)
     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+    # Attach rate limit visibility header if not already present
+    if "X-RateLimit-Limit" not in response.headers:
+        if request.url.path == "/api/predict":
+            response.headers["X-RateLimit-Limit"] = "30"
+        else:
+            response.headers["X-RateLimit-Limit"] = "60"
 
     client_host = request.client.host if request.client else "unknown"
     record = logging.LogRecord(
@@ -201,11 +266,14 @@ class PredictResponse(BaseModel):
 
 
 @app.get("/api/health")
+@app.get("/api/version")
 def health():
     return {
         "status": "ok",
+        "version": "1.0.0",
+        "model_id": DEFAULT_MODEL,
         "supported_models": list(SUPPORTED_MODELS),
-        "auth_enabled": bool(API_KEY_ENV),
+        "auth_enabled": bool(os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")),
     }
 
 
