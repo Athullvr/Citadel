@@ -7,6 +7,7 @@ so future Phase 2 calibration models (e.g. Gemini, Groq/Llama) can be added
 without changing the prediction interface.
 """
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ import numpy as np
 import pandas as pd
 from features import FEATURE_NAMES, extract_features
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(os.environ.get("DATA_COLLECTION_DIR", str(Path(__file__).resolve().parent))).resolve()
 CALIBRATION_DIR = BASE_DIR / "calibration_data"
 
 SUPPORTED_MODELS = {"claude-sonnet"}
@@ -26,18 +27,30 @@ _BUNDLE_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def get_bundle_path(model_id: str = DEFAULT_MODEL) -> Path:
-    """Resolve the joblib path for a given model_id."""
-    # First check calibration_data/{model_id}.joblib
-    path = CALIBRATION_DIR / f"{model_id}.joblib"
-    if path.exists():
-        return path
+    """Resolve the joblib path for a given model_id across multiple environment layouts."""
+    candidates = [
+        CALIBRATION_DIR / f"{model_id}.joblib",
+        Path(__file__).resolve().parent / "calibration_data" / f"{model_id}.joblib",
+        BASE_DIR / f"{model_id}.joblib",
+        Path(__file__).resolve().parent / f"{model_id}.joblib",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
+
     # Backward-compat fallback for root model.joblib if model_id is default
-    fallback = BASE_DIR / "model.joblib"
-    if model_id == DEFAULT_MODEL and fallback.exists():
-        return fallback
+    if model_id == DEFAULT_MODEL:
+        fallback_candidates = [
+            BASE_DIR / "model.joblib",
+            Path(__file__).resolve().parent / "model.joblib",
+        ]
+        for fb in fallback_candidates:
+            if fb.exists():
+                return fb.resolve()
+
     raise FileNotFoundError(
         f"Calibration bundle for model '{model_id}' not found. "
-        f"Expected path: {path}. Supported models: {list(SUPPORTED_MODELS)}"
+        f"Searched paths: {[str(c) for c in candidates]}. Supported models: {list(SUPPORTED_MODELS)}"
     )
 
 

@@ -226,3 +226,58 @@ def test_resolve_data_collection_dir():
     assert p.exists()
     assert (p / "predict.py").exists()
 
+
+def test_e2e_unmocked_frozen_bundle_prediction(client):
+    """
+    Smoke test: calls /api/predict against the real, unmocked claude-sonnet.joblib
+    bundle on disk to verify end-to-end inference and conformal residual ranges.
+    """
+    # 1. Test standard multi-step task
+    payload = {
+        "task_text": "Audit repository for dead code, run test suite, and write migration guide",
+        "tools": ["list_files", "read_document", "draft_document"],
+        "model_id": "claude-sonnet",
+    }
+    res = client.post("/api/predict", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["model_id"] == "claude-sonnet"
+    assert data["low_tokens"] > 0
+    assert data["low_tokens"] <= data["expected_tokens"] <= data["high_tokens"]
+    assert isinstance(data["driving_factors"], list)
+    assert len(data["driving_factors"]) > 0
+    assert "features" in data
+    assert data["features"]["num_tools"] == 3
+    assert data["confidence"] in ("normal", "high", "low")
+
+    # 2. Test single-shot deterministic calculation
+    payload_calc = {
+        "task_text": "Calculate compound interest for $10,000 at 5% over 10 years",
+        "tools": ["calculator"],
+        "model_id": "claude-sonnet",
+    }
+    res_calc = client.post("/api/predict", json=payload_calc)
+    assert res_calc.status_code == 200
+    data_calc = res_calc.json()
+    assert data_calc["expected_tokens"] < data["expected_tokens"]  # Single-shot uses fewer tokens than multi-tool
+
+
+def test_cors_allowed_origins_enforcement(client):
+    """
+    Verify CORSMiddleware responds to configured Origin header.
+    """
+    payload = {
+        "task_text": "Research market trends",
+        "tools": ["web_search"],
+    }
+    res = client.post(
+        "/api/predict",
+        json=payload,
+        headers={"Origin": "http://localhost:3000"},
+    )
+    assert res.status_code == 200
+    assert res.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert res.headers.get("access-control-allow-credentials") == "true"
+
+

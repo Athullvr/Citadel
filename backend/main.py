@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -29,7 +31,6 @@ from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-
 
 # Configure JSON logger
 class JsonFormatter(logging.Formatter):
@@ -48,7 +49,7 @@ class JsonFormatter(logging.Formatter):
 logger = logging.getLogger("citadel.api")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
 
@@ -80,6 +81,7 @@ if str(DATA_COLLECTION_DIR) not in sys.path:
 from predict import (
     DEFAULT_MODEL,
     SUPPORTED_MODELS,
+    get_bundle_path,
     load_bundle,
 )
 from predict import (
@@ -90,10 +92,25 @@ from tools import TOOL_SCHEMAS
 # Rate Limiter setup
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup verification: ensure the frozen calibration bundle exists and loads cleanly."""
+    try:
+        bundle_path = get_bundle_path(DEFAULT_MODEL)
+        load_bundle(DEFAULT_MODEL)
+        logger.info(f"Calibration bundle loaded successfully from {bundle_path}")
+    except Exception as exc:
+        logger.critical(f"FATAL: Failed to load calibration bundle for '{DEFAULT_MODEL}' on startup: {exc}")
+        raise RuntimeError(f"Startup check failed: Calibration bundle not found or invalid: {exc}") from exc
+    yield
+
+
 app = FastAPI(
     title="Citadel Predict API",
     version="1.0.0",
     description="Pre-execution LLM token budget and cost predictor for AI agent runs",
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 
@@ -154,6 +171,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
 
 
 # CORS configuration
+# Configure ALLOWED_ORIGINS as a comma-separated list of allowed origins in Render Dashboard.
+# Example: ALLOWED_ORIGINS="https://citadel-predict.vercel.app,http://localhost:3000"
+# Defaults to "http://localhost:3000" (restrictive default for security; avoid wildcard "*" in production).
 raw_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
 allowed_origins = [o.strip() for o in raw_allowed_origins.split(",") if o.strip()]
 
