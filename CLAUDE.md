@@ -182,3 +182,36 @@ python scripts/configure_mcp.py --api-url http://localhost:8000 --non-interactiv
      "retry_after": null
    }
    ```
+
+---
+
+## 7. Before Pushing to Main
+
+To ensure zero regressions and protect the frozen baseline:
+
+### Automated Safeguards Setup (Recommended)
+Activate local git safeguards:
+```bash
+# Option A: Zero-dependency native git hooks installer
+python scripts/install_git_hooks.py
+
+# Option B: Standard pre-commit framework
+pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
+```
+
+### Manual Verification Checklist (Before Push)
+1. **Run Full Test Suite**:
+   ```bash
+   data_collection/.venv/Scripts/pytest -v
+   ```
+2. **Verify Frozen Baseline is Untouched**:
+   ```bash
+   git diff --stat HEAD~1 | grep -E "claude-sonnet\.joblib|runs\.jsonl"
+   # Must produce zero output
+   ```
+3. **Post-Deploy Health Check (Render)**:
+   ```bash
+   curl -i https://<your-render-service>.onrender.com/api/health
+   # Must return 200 OK with {"status": "ok", "model_id": "claude-sonnet"}
+   ```
+

@@ -1,0 +1,36 @@
+# .pre-commit-config.yaml — Citadel Predict Git Hooks
+#
+# Activation (Optional):
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit install --hook-type pre-push
+#
+# Alternatively, run:
+#   python scripts/install_git_hooks.py
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-frozen-baseline
+        name: Guard Frozen Baseline (Sonnet Joblib & Dataset)
+        entry: python scripts/check_frozen_baseline.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit, push]
+
+      - id: fast-backend-tests
+        name: Run Fast Backend Unit Tests
+        entry: python -m pytest backend/tests
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+
+      - id: full-test-suite
+        name: Run Full Pytest Suite (Pre-Push)
+        entry: python -m pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [push]
