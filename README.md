@@ -129,10 +129,12 @@ python scripts/configure_mcp.py --api-key cp_live_your_key --api-url https://you
 
 ## Deployment
 
-### Cloud Deployment (Render Blueprint)
-The backend API is pre-configured for one-click deployment on Render using [`render.yaml`](file:///c:/Users/Athul%20VR/OneDrive/Desktop/Citadel/render.yaml):
-1. Connect the repository to Render.
-2. Set `CITADEL_REQUIRE_AUTH=true` and `CITADEL_API_KEY=cp_live_...` in your Render Dashboard Environment Variables.
+### Cloud Deployment (Render)
+Deploy as a Web Service on Render:
+1. Connect this repository to your Render Dashboard.
+2. Set Build Command to `pip install -r backend/requirements.txt`.
+3. Set Start Command to `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`.
+4. Configure `CITADEL_REQUIRE_AUTH=true` and `CITADEL_API_KEY=cp_live_...` in your Render Environment Variables.
 
 ### Container Build (Backend Docker)
 Build from the **repository root**:

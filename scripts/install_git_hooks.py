@@ -20,20 +20,48 @@ GIT_HOOKS_DIR = REPO_ROOT / ".git" / "hooks"
 
 PRE_COMMIT_SCRIPT = """#!/bin/sh
 # Citadel Predict pre-commit hook
+
+# Resolve active or repository virtual environment Python
+if [ -f "data_collection/.venv/Scripts/python.exe" ]; then
+    PY="data_collection/.venv/Scripts/python.exe"
+elif [ -f "data_collection/.venv/bin/python" ]; then
+    PY="data_collection/.venv/bin/python"
+elif [ -f ".venv/Scripts/python.exe" ]; then
+    PY=".venv/Scripts/python.exe"
+elif [ -f ".venv/bin/python" ]; then
+    PY=".venv/bin/python"
+else
+    PY="python"
+fi
+
 echo "[HOOK] Checking frozen baseline artifacts..."
-python scripts/check_frozen_baseline.py || exit 1
+"$PY" scripts/check_frozen_baseline.py || exit 1
 
 echo "[HOOK] Running fast backend unit tests..."
-python -m pytest backend/tests -q || exit 1
+"$PY" -m pytest backend/tests -q || exit 1
 
 echo "[HOOK] Pre-commit checks passed."
 """
 
 PRE_PUSH_SCRIPT = """#!/bin/sh
 # Citadel Predict pre-push hook
+
+# Resolve active or repository virtual environment Python
+if [ -f "data_collection/.venv/Scripts/python.exe" ]; then
+    PY="data_collection/.venv/Scripts/python.exe"
+elif [ -f "data_collection/.venv/bin/python" ]; then
+    PY="data_collection/.venv/bin/python"
+elif [ -f ".venv/Scripts/python.exe" ]; then
+    PY=".venv/Scripts/python.exe"
+elif [ -f ".venv/bin/python" ]; then
+    PY=".venv/bin/python"
+else
+    PY="python"
+fi
+
 echo "[HOOK] Running full pre-push test suite..."
-python scripts/check_frozen_baseline.py || exit 1
-python -m pytest -v || exit 1
+"$PY" scripts/check_frozen_baseline.py || exit 1
+"$PY" -m pytest -v || exit 1
 
 echo "[HOOK] Pre-push checks passed. Ready to push."
 """
