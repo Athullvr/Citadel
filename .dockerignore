@@ -1,8 +1,27 @@
+# Python & Virtual Environments
 **/.venv/
-**/node_modules/
-**/__pycache__/
+.venv/
+__pycache__/
 **/*.pyc
-.git/
-.env
+**/*.pyo
+**/*.pyd
+
+# Tests & Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node & Frontend
+**/node_modules/
+node_modules/
 frontend/.next/
+frontend/out/
+
+# Version Control & Secrets
+.git/
+.gitignore
+.env
+.env.*
+
+# Training-only Data (Not needed in production container)
 data_collection/data/runs.jsonl

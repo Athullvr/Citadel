@@ -52,14 +52,30 @@ if not logger.handlers:
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
 
-# Set up module resolution for data_collection
-DATA_COLLECTION_DIR = Path(
-    os.environ.get(
-        "DATA_COLLECTION_DIR",
-        str(Path(__file__).resolve().parent.parent / "data_collection"),
-    )
-)
-sys.path.insert(0, str(DATA_COLLECTION_DIR))
+# Set up robust module resolution for data_collection
+def resolve_data_collection_dir() -> Path:
+    env_dir = os.environ.get("DATA_COLLECTION_DIR")
+    if env_dir:
+        p = Path(env_dir).resolve()
+        if p.exists():
+            return p
+
+    candidates = [
+        Path(__file__).resolve().parent.parent / "data_collection",
+        Path(__file__).resolve().parent / "data_collection",
+        Path.cwd() / "data_collection",
+        Path.cwd().parent / "data_collection",
+    ]
+    for c in candidates:
+        if c.exists() and (c / "predict.py").exists():
+            return c.resolve()
+
+    return Path(__file__).resolve().parent.parent / "data_collection"
+
+
+DATA_COLLECTION_DIR = resolve_data_collection_dir()
+if str(DATA_COLLECTION_DIR) not in sys.path:
+    sys.path.insert(0, str(DATA_COLLECTION_DIR))
 
 from predict import (
     DEFAULT_MODEL,
@@ -154,12 +170,21 @@ API_KEY_ENV = os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")
 security_scheme = HTTPBearer(auto_error=False)
 
 
+def is_auth_enabled() -> bool:
+    """Check if authentication is active (via CITADEL_REQUIRE_AUTH or configured API key)."""
+    require_auth = os.environ.get("CITADEL_REQUIRE_AUTH", "").strip().lower() in ("true", "1", "yes")
+    has_key = bool(os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY"))
+    return require_auth or has_key
+
+
 def verify_api_key(
     credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),  # noqa: B008
 ) -> str | None:
     """Verify Bearer token against configured CITADEL_API_KEY / API_KEY."""
     expected_key = os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")
-    if not expected_key:
+    require_auth = os.environ.get("CITADEL_REQUIRE_AUTH", "").strip().lower() in ("true", "1", "yes")
+
+    if not expected_key and not require_auth:
         # Auth not configured -> open access (dev/demo mode)
         return None
 
@@ -168,6 +193,12 @@ def verify_api_key(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or malformed Authorization header. Expected 'Bearer <API_KEY>'",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not expected_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server has CITADEL_REQUIRE_AUTH=true but no CITADEL_API_KEY is configured in the environment.",
         )
 
     if credentials.credentials.strip() != expected_key.strip():
@@ -273,7 +304,7 @@ def health():
         "version": "1.0.0",
         "model_id": DEFAULT_MODEL,
         "supported_models": list(SUPPORTED_MODELS),
-        "auth_enabled": bool(os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")),
+        "auth_enabled": is_auth_enabled(),
     }
 
 

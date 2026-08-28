@@ -192,3 +192,37 @@ def test_non_browser_server_to_server_request(client, monkeypatch):
     assert res.status_code == 200
     assert res.json()["expected_tokens"] > 0
     assert "access-control-allow-origin" not in res.headers or res.headers.get("access-control-allow-origin") == "*" or res.status_code == 200
+
+
+def test_auth_enforcement_require_auth_flag(client, monkeypatch):
+    """
+    Verify CITADEL_REQUIRE_AUTH=true behavior.
+    """
+    # 1. Require auth is true but no key set -> 500 error
+    monkeypatch.setenv("CITADEL_REQUIRE_AUTH", "true")
+    monkeypatch.delenv("CITADEL_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+
+    payload = {"task_text": "Test task", "tools": ["calculator"]}
+    res = client.post("/api/predict", json=payload, headers={"Authorization": "Bearer test"})
+    assert res.status_code == 500
+    assert "CITADEL_REQUIRE_AUTH=true but no CITADEL_API_KEY" in res.json()["message"]
+
+    # 2. Require auth is true with key set -> 200 on valid bearer
+    monkeypatch.setenv("CITADEL_API_KEY", "secret-key-xyz")
+    res_valid = client.post(
+        "/api/predict",
+        json=payload,
+        headers={"Authorization": "Bearer secret-key-xyz"},
+    )
+    assert res_valid.status_code == 200
+
+
+def test_resolve_data_collection_dir():
+    """Verify resolve_data_collection_dir finds a valid data_collection path."""
+    from main import resolve_data_collection_dir
+
+    p = resolve_data_collection_dir()
+    assert p.exists()
+    assert (p / "predict.py").exists()
+
