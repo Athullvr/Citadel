@@ -37,28 +37,35 @@ citadel-predict-mcp --help
 
 ---
 
-## Claude Desktop Configuration
+## Quickstart: One-Command Auto-Configuration (Recommended)
 
-Claude Desktop connects to local MCP servers by reading its configuration file `claude_desktop_config.json`.
+To automatically configure **both** Claude Desktop and Claude Code on Windows, macOS, or Linux with zero manual JSON editing:
 
-### 1. Locate your Configuration File
+```bash
+# Run from repository root with your active Python environment:
+python scripts/configure_mcp.py
 
-Find the configuration file for your operating system:
+# Or pass parameters non-interactively:
+python scripts/configure_mcp.py --api-key cp_live_your_key_here --api-url http://localhost:8000
+```
 
-| Operating System | Exact File Path |
+The script automatically detects your active virtual environment, locates the platform-specific executable (`citadel-predict-mcp.exe` on Windows or `citadel-predict-mcp` on macOS/Linux), and cleanly merges the server definition into both `claude_desktop_config.json` and `.claude/settings.json` while preserving all existing configurations.
+
+---
+
+## Manual Configuration (Alternative)
+
+If you prefer to configure manually:
+
+### 1. Claude Desktop (`claude_desktop_config.json`)
+
+| Operating System | Exact Configuration File Path |
 | :--- | :--- |
 | **macOS** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| **Windows** | `%APPDATA%\Claude\claude_desktop_config.json`<br>*(e.g., `C:\Users\<YourUsername>\AppData\Roaming\Claude\claude_desktop_config.json`)* |
+| **Windows** | `%APPDATA%\Claude\claude_desktop_config.json` |
 | **Linux** | `~/.config/Claude/claude_desktop_config.json` |
 
-> [!TIP]
-> On Windows, you can press `Win + R`, type `%APPDATA%\Claude`, and press **Enter** to open the folder directly in File Explorer. If `claude_desktop_config.json` does not exist yet, create a new text file and rename it to `claude_desktop_config.json`.
-
----
-
-### 2. Paste Configuration JSON
-
-Open `claude_desktop_config.json` in any text editor and add the `citadel-predict` server entry under the `mcpServers` object:
+Add `citadel-predict` under `mcpServers`:
 
 ```json
 {
@@ -66,57 +73,18 @@ Open `claude_desktop_config.json` in any text editor and add the `citadel-predic
     "citadel-predict": {
       "command": "citadel-predict-mcp",
       "env": {
-        "CITADEL_API_KEY": "cp_live_your_api_key_here"
+        "CITADEL_API_KEY": "cp_live_your_api_key_here",
+        "CITADEL_API_URL": "http://localhost:8000"
       }
     }
   }
 }
 ```
 
-> [!NOTE]
-> If you already configured your API key in `~/.citadel/config.toml` (or system environment variable `CITADEL_API_KEY`), the `env` block in `claude_desktop_config.json` is optional:
-> ```json
-> {
->   "mcpServers": {
->     "citadel-predict": {
->       "command": "citadel-predict-mcp"
->     }
->   }
-> }
-> ```
+### 2. Claude Code (`.claude/settings.json`)
 
----
-
-### 3. Restart Claude Desktop
-
-1. Completely exit Claude Desktop (**macOS**: `Cmd + Q`, **Windows**: Right-click the Claude icon in the System Tray and choose **Quit**).
-2. Re-open Claude Desktop.
-3. Look for the 🔌 or 🔨 icon in the bottom right corner of the chat input box. You should see `citadel-predict` listed with the `estimate_agent_cost` tool enabled.
-
----
-
-## Claude Code Configuration
-
-Claude Code natively supports MCP servers. You can add Citadel Predict using either the CLI or configuration file:
-
-### Option A: Using Claude Code CLI
 ```bash
 claude mcp add citadel-predict -- citadel-predict-mcp
-```
-
-### Option B: Using Settings File
-In your project's `.claude/settings.json` or global `~/.claude/settings.json`:
-```json
-{
-  "mcpServers": {
-    "citadel-predict": {
-      "command": "citadel-predict-mcp",
-      "env": {
-        "CITADEL_API_KEY": "cp_live_your_api_key_here"
-      }
-    }
-  }
-}
 ```
 
 ---

@@ -109,9 +109,32 @@ npx tsc --noEmit
 
 ---
 
+## Claude Desktop & Claude Code (MCP Server)
+
+Citadel Predict includes an official Model Context Protocol (MCP) server located in [`packages/citadel-predict-mcp`](file:///c:/Users/Athul%20VR/OneDrive/Desktop/Citadel/packages/citadel-predict-mcp).
+
+### One-Command Setup (Windows, macOS, Linux)
+
+Automatically configure **both** Claude Desktop (`claude_desktop_config.json`) and Claude Code (`.claude/settings.json`) in one command:
+
+```bash
+# Run with your active Python environment:
+python scripts/configure_mcp.py
+
+# Or non-interactively with custom API endpoint/key:
+python scripts/configure_mcp.py --api-key cp_live_your_key --api-url https://your-backend.onrender.com
+```
+
+---
+
 ## Deployment
 
-### Container Build (Backend)
+### Cloud Deployment (Render Blueprint)
+The backend API is pre-configured for one-click deployment on Render using [`render.yaml`](file:///c:/Users/Athul%20VR/OneDrive/Desktop/Citadel/render.yaml):
+1. Connect the repository to Render.
+2. Set `CITADEL_REQUIRE_AUTH=true` and `CITADEL_API_KEY=cp_live_...` in your Render Dashboard Environment Variables.
+
+### Container Build (Backend Docker)
 Build from the **repository root**:
 ```bash
 docker build -f backend/Dockerfile -t citadel-predict-api .
