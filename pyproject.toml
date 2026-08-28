@@ -14,5 +14,14 @@ disallow_untyped_defs = false
 check_untyped_defs = true
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests"]
-pythonpath = ["backend", "data_collection"]
+testpaths = [
+    "backend/tests",
+    "packages/citadel-predict/tests",
+    "packages/citadel-predict-mcp/tests",
+]
+pythonpath = [
+    "backend",
+    "data_collection",
+    "packages/citadel-predict/src",
+    "packages/citadel-predict-mcp/src",
+]
