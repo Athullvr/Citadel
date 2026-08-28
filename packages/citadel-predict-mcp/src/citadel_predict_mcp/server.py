@@ -5,6 +5,7 @@ Exposes pre-execution token and cost prediction tools for AI agent workflows
 over stdio transport for Claude Desktop and Claude Code.
 """
 
+import sys
 from typing import Any, Optional
 
 from citadel_predict import (
@@ -167,6 +168,29 @@ server = create_server()
 
 def main() -> None:
     """Entrypoint for the citadel-predict-mcp CLI command (runs over stdio transport)."""
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help", "-v", "--version"):
+        if sys.argv[1] in ("-v", "--version"):
+            from . import __version__
+
+            print(f"citadel-predict-mcp v{__version__}")
+            return
+
+        print("Citadel Predict MCP Server (stdio transport)")
+        print("\nUsage:")
+        print("  citadel-predict-mcp            Run as an MCP stdio server (used by Claude Desktop/Code)")
+        print("  citadel-predict-mcp --help     Show this help message")
+        print("  citadel-predict-mcp --version  Show version")
+        print("\nConfiguration for Claude Desktop (claude_desktop_config.json):")
+        print("  {")
+        print('    "mcpServers": {')
+        print('      "citadel-predict": {')
+        print('        "command": "citadel-predict-mcp",')
+        print('        "env": { "CITADEL_API_KEY": "cp_live_..." }')
+        print("      }")
+        print("    }")
+        print("  }")
+        return
+
     server.run(transport="stdio")
 
 

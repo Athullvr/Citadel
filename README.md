@@ -31,6 +31,9 @@ Citadel/
 │   ├── predict.py               # Model registry, model_id lookup & OOD confidence evaluator
 │   ├── tasks.py & tools.py      # Benchmark tasks and 7 mock tools
 │   └── data/runs.jsonl          # Benchmark empirical execution logs
+├── packages/
+│   ├── citadel-predict/         # Python client library + CLI (pip install citadel-predict)
+│   └── citadel-predict-mcp/     # MCP stdio server for Claude Desktop & Claude Code
 ├── frontend/
 │   ├── src/app/page.tsx         # Next.js UI: Live predictor, confidence badge, OOD alerts, validation cards
 │   ├── src/app/page.test.tsx    # Vitest component smoke tests
