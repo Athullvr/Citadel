@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "citadel-predict": {
-      "command": "C:\\Users\\Athul VR\\OneDrive\\Desktop\\Citadel\\data_collection\\.venv\\Scripts\\citadel-predict-mcp.exe",
+      "command": "/home/athulvr/Documents/My Projects/Citadel/Citadel/data_collection/.venv/bin/citadel-predict-mcp",
       "env": {
         "CITADEL_API_URL": "http://localhost:8000"
       }
