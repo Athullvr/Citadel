@@ -1,62 +1,132 @@
-# Citadel Predict — Pre-Execution AI Agent Cost Predictor
+# Citadel Predict — Pre-Execution AI Agent Cost & Token Budget Predictor
 
-**Citadel Predict** is a pre-execution token budget prediction tool for AI agent workflows. It predicts the LLM-token cost of an agent run **before the agent executes** — outputting a calibrated uncertainty range (`[low, expected, high]`), driving factor explanations, and out-of-distribution confidence flags.
+[![PyPI Version](https://img.shields.io/pypi/v/citadel-predict.svg)](https://pypi.org/project/citadel-predict/)
+[![MCP Package](https://img.shields.io/pypi/v/citadel-predict-mcp.svg?label=mcp-server)](https://pypi.org/project/citadel-predict-mcp/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/citadel-predict.svg)](https://pypi.org/project/citadel-predict/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Citadel Predict** is a pre-execution token budget and cost prediction platform for autonomous AI agent workflows. It predicts the LLM token consumption of an agent run **before the agent executes** — outputting a calibrated uncertainty range (`[low, expected, high]`), driving factor explanations, and out-of-distribution (OOD) risk flags.
 
 ---
 
-## The Gap Citadel Predict Targets
+## The Core Problem
 
-The agent cost governance ecosystem (Portkey, LiteLLM, Datadog LLM Observability, LangSmith, Arize Phoenix) is **reactive** — measuring and enforcing cost during or after an execution. Citadel Predict forecasts cost *before a single token is spent*, enabling proactive routing, human approval thresholds, and automated budgeting.
+Existing agent governance and observability tools (Langfuse, Portkey, LiteLLM, Helicone, LangSmith) are **reactive** — they record tokens and costs *during* or *after* execution.
+
+**Citadel Predict** is **predictive** — forecasting token consumption and cost bounds *before* initiating expensive agent loops, enabling pre-flight budget guardrails, dynamic model routing, and human-in-the-loop approvals.
 
 ---
 
-## Core Technical Architecture & Forward-Compatibility
+## ⚡ Quickstart
 
+### 1. Python SDK & CLI (`citadel-predict`)
+
+Install the official client from PyPI:
+
+```bash
+pip install citadel-predict
 ```
+
+#### CLI Usage (Zero-Config)
+```bash
+# Pretty-printed cost estimate card
+citadel-predict --task "Research competitor pricing across 3 sources and draft report" --tools web_search,draft_document
+
+# Scripting / CI mode (JSON output)
+citadel-predict --task "Calculate statistical metrics" --tools calculator --json
+```
+
+#### Python SDK (Pre-Flight Agent Guardrails)
+```python
+from citadel_predict import predict_cost
+
+# Evaluate budget before running agent loops (LangGraph, CrewAI, AutoGen)
+prediction = predict_cost(
+    task_text="Perform exhaustive market research across 20 industry filings",
+    tools=["web_search", "fetch_url", "draft_document"]
+)
+
+print(f"Expected: {prediction['expected_tokens']:,} tokens (Range: {prediction['low_tokens']:,} – {prediction['high_tokens']:,})")
+print(f"Driving Factors: {prediction['driving_factors']}")
+
+# Guardrail: Escalate if upper bound exceeds budget
+if prediction["high_tokens"] > 10000:
+    print("Warning: Upper estimate exceeds token budget. Escalating for human review.")
+```
+
+---
+
+### 2. Claude Desktop & Claude Code (MCP Server)
+
+Citadel Predict includes an official Model Context Protocol (MCP) server for Claude Desktop and Claude Code.
+
+#### Claude Desktop Setup (Zero-Config)
+In Claude Desktop, go to **Settings (⚙️) → Developer → Edit Config** and add `citadel-predict` under `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "citadel-predict": {
+      "command": "uvx",
+      "args": ["citadel-predict-mcp"]
+    }
+  }
+}
+```
+*(Or with pipx: `"command": "pipx", "args": ["run", "citadel-predict-mcp"]`)*
+
+Restart Claude Desktop. The `estimate_agent_cost` tool will now be active in your Claude conversations.
+
+#### Automated Configuration Script
+You can also run the cross-platform setup script from your terminal:
+
+```bash
+python scripts/configure_mcp.py --non-interactive
+```
+
+---
+
+## How It Works
+
+Citadel Predict extracts **10 structural & lexical features** directly from the task prompt and available tool schemas:
+1. `text_char_len`: Character length of the task prompt.
+2. `text_word_len`: Word count of the prompt.
+3. `num_tools`: Number of tools provided to the agent.
+4. `open_ended_keyword_hits`: Matches for exploratory terms (`"research"`, `"investigate"`).
+5. `narrow_keyword_hits`: Matches for single-step terms (`"calculate"`, `"convert"`).
+6. `max_explicit_count`: Highest explicit quantity mentioned (`"5 sources"`, `"3 emails"`).
+7. `sum_explicit_counts`: Total sum of explicit quantities.
+8. `step_connector_hits`: Sequential step markers (`"then"`, `"next"`, `"after that"`).
+9. `num_clauses`: Structural sentence clause count.
+10. `is_question`: Boolean indicator for question syntax.
+
+Features are evaluated by a **Gradient Boosting Regressor** with split-conformal prediction intervals calibrated via Leave-One-Task-Out (LOTO) cross-validation.
+
+---
+
+## Monorepo Architecture
+
+```text
 Citadel/
-├── .github/workflows/ci.yml     # GitHub Actions: Python & Node lints, types, tests, Docker build
-├── pyproject.toml               # Python tooling configuration (ruff, mypy, pytest)
-├── backend/
-│   ├── main.py                  # FastAPI: Bearer Auth, Rate Limiting, JSON Logs, model_id routing
-│   ├── requirements.txt         # Production & test dependencies (slowapi, httpx, pytest, ruff, mypy)
-│   ├── Dockerfile               # Multi-worker container deployment
-│   └── tests/
-│       ├── conftest.py          # Pytest environment fixtures
-│       ├── test_api.py          # API security, validation, rate limiting & endpoint tests
-│       └── test_features.py     # Feature extraction edge-case test suite
-├── data_collection/
-│   ├── calibration_data/
-│   │   └── claude-sonnet.joblib # Frozen v1 baseline calibration bundle (N=20 tasks, 80 runs)
-│   ├── features.py              # Pure feature extractor (10 numerical features)
-│   ├── predict.py               # Model registry, model_id lookup & OOD confidence evaluator
-│   ├── tasks.py & tools.py      # Benchmark tasks and 7 mock tools
-│   └── data/runs.jsonl          # Benchmark empirical execution logs
+├── backend/                      # FastAPI inference API & production backend
+│   ├── main.py                   # API endpoints, auth, rate limiting, error handlers
+│   ├── Dockerfile                # Production Docker container
+│   └── tests/                    # Backend unit & integration test suite
+├── data_collection/              # Dataset, feature engineering & model training
+│   ├── features.py               # 10-feature extraction engine
+│   ├── predict.py                # Inference, model registry & OOD confidence evaluator
+│   ├── tasks.py & tools.py       # Benchmark tasks and synthetic tools
+│   ├── calibration_data/         # Serialized model bundles (.joblib)
+│   └── data/runs.jsonl           # Benchmark empirical execution logs
+├── frontend/                     # Next.js 16 Web Dashboard & interactive estimator
 ├── packages/
-│   ├── citadel-predict/         # Python client library + CLI (pip install citadel-predict)
-│   └── citadel-predict-mcp/     # MCP stdio server for Claude Desktop & Claude Code
-├── frontend/
-│   ├── src/app/page.tsx         # Next.js UI: Live predictor, confidence badge, OOD alerts, validation cards
-│   ├── src/app/page.test.tsx    # Vitest component smoke tests
-│   └── vitest.config.mjs        # Vitest configuration
-├── MIGRATION_NOTES.md           # Instructions for Phase 2 incremental model additions (Gemini, Groq)
-└── README.md
+│   ├── citadel-predict/          # Official Python SDK & CLI (PyPI: citadel-predict)
+│   └── citadel-predict-mcp/      # Official MCP Server (PyPI: citadel-predict-mcp)
+├── scripts/                      # Setup scripts & git integrity hooks
+├── CITATION.cff                  # Citation metadata
+├── LICENSE                       # MIT License
+└── pyproject.toml                # Monorepo Python configuration (pytest, ruff, mypy)
 ```
-
-### Multi-Model-Ready Architecture (Phase 1)
-- **Pluggable Model Registry**: Predictions accept `model_id` (default: `"claude-sonnet"`).
-- **Decoupled Calibration Bundles**: Model weights and residual bands are stored under `data_collection/calibration_data/{model_id}.joblib`. Adding a future model (Gemini, Groq/Llama) is purely additive (see [MIGRATION_NOTES.md](file:///c:/Users/Athul%20VR/OneDrive/Desktop/Citadel/MIGRATION_NOTES.md)).
-- **Frozen Sonnet Dataset**: The Claude Sonnet calibration baseline ($N=20$ tasks, 80 runs) is finalized.
-
----
-
-## Security & Production Hardening
-
-- **API Key Authentication**: Optional or enforced via `CITADEL_API_KEY` or `API_KEY` env var (`Authorization: Bearer <key>`).
-- **Rate Limiting**: Integrated via `slowapi` (`30 req/min` on `/api/predict`, `60 req/min` on `/api/tools`).
-- **Input Validation & ReDoS Protection**: Strict Pydantic constraints (`task_text` $\le 4000$ chars, `tools` $\le 20$ items).
-- **CORS Enforcement**: Explicit origin whitelisting via `ALLOWED_ORIGINS` (default: `http://localhost:3000`).
-- **Structured JSON Logging**: Standardized JSON lines emitted for every request (timestamp, method, path, status, latency, model_id).
-- **Serving**: Configured for multi-worker uvicorn execution via `${WORKERS:-2}` in `backend/Dockerfile`.
 
 ---
 
@@ -65,7 +135,7 @@ Citadel/
 ### 1. Backend API
 ```bash
 cd backend
-../data_collection/.venv/Scripts/activate   # Windows (.venv/bin/activate on Linux/macOS)
+source ../data_collection/.venv/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -74,89 +144,59 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 cd frontend
 npm install
 npm run dev
-# Open http://localhost:3000
+# Accessible at http://localhost:3000
 ```
 
 ---
 
 ## Running Tests & Quality Checks
 
-### Backend Test Suite & Type Checking
+Execute all 73 automated tests across the monorepo:
+
 ```bash
-# Run 16 automated tests (Auth, Rate Limiting, Validation, OOD, Features)
-pytest backend/tests -v
-
-# Run Ruff linter
-ruff check backend/ data_collection/features.py data_collection/predict.py
-
-# Run Mypy static type checker
-mypy backend/main.py data_collection/features.py data_collection/predict.py
-```
-
-### Frontend Tests & Type Checking
-```bash
-cd frontend
-
-# Run Vitest unit & component smoke tests
-npm run test
-
-# Run ESLint
-npm run lint
-
-# Run TypeScript type check
-npx tsc --noEmit
+pytest backend/tests packages/citadel-predict/tests packages/citadel-predict-mcp/tests -v
 ```
 
 ---
 
-## Claude Desktop & Claude Code (MCP Server)
+## Production Deployment
 
-Citadel Predict includes an official Model Context Protocol (MCP) server located in [`packages/citadel-predict-mcp`](file:///c:/Users/Athul%20VR/OneDrive/Desktop/Citadel/packages/citadel-predict-mcp).
+### Live API Backend
+The backend is hosted live at `https://citadel-7j9u.onrender.com` (deployed on Render).
 
-### One-Command Setup (Windows, macOS, Linux)
-
-Automatically configure **both** Claude Desktop (`claude_desktop_config.json`) and Claude Code (`.claude/settings.json`) in one command:
-
-```bash
-# Run with your active Python environment:
-python scripts/configure_mcp.py
-
-# Or non-interactively with custom API endpoint/key:
-python scripts/configure_mcp.py --api-key cp_live_your_key --api-url https://your-backend.onrender.com
-```
-
----
-
-## Deployment
-
-### Cloud Deployment (Render)
-Deploy as a Web Service on Render:
+To deploy your own instance:
 1. Connect this repository to your Render Dashboard.
-2. Set Build Command to `pip install -r backend/requirements.txt`.
-3. Set Start Command to `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`.
-4. Configure `CITADEL_REQUIRE_AUTH=true` and `CITADEL_API_KEY=cp_live_...` in your Render Environment Variables.
-
-### Container Build (Backend Docker)
-Build from the **repository root**:
-```bash
-docker build -f backend/Dockerfile -t citadel-predict-api .
-docker run -p 8000:8000 \
-  -e ALLOWED_ORIGINS=https://your-frontend.vercel.app \
-  -e CITADEL_API_KEY=your-secure-key \
-  -e WORKERS=2 \
-  citadel-predict-api
-```
-
-### Frontend (Vercel)
-Deploy `frontend/` to Vercel. Configure environment variables:
-- `NEXT_PUBLIC_API_BASE`: `https://your-backend-api.com`
-- `NEXT_PUBLIC_CITADEL_API_KEY`: `your-secure-key` (if auth enabled)
+2. Build Command: `pip install -r backend/requirements.txt`
+3. Start Command: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. Optional Env Vars: `CITADEL_REQUIRE_AUTH=true`, `CITADEL_API_KEY=cp_live_...`
 
 ---
 
 ## Honest Capabilities & Known Limitations
 
-1. **Single Model Baseline**: Currently fit exclusively on **Claude Sonnet 5** ($N=20$ benchmark tasks, 80 runs).
-2. **Synthetic Tool Sizing**: Data was collected using 7 deterministic mock tools. Real-world tools with high output length variance (e.g. 50KB JSON payloads) will cause higher context growth.
-3. **Statistical Range, Not Exact Simulation**: Predictions represent an empirical prediction interval with split-conformal calibration (~80% LOTO coverage), not an exact guarantee.
-4. **Out-of-Distribution Flags**: Tasks with 0 tools, $>5$ tools, $>600$ characters, or no standard action keywords are flagged as `confidence="low"` or `out_of_distribution=True` with specific advisory notes.
+1. **Baseline Model**: Calibration is currently fit on **Claude Sonnet** ($N=20$ benchmark task archetypes, 80 empirical runs).
+2. **Synthetic Tool Sizing**: Collected with deterministic mock tools with representative output expansion. Real tools with massive dynamic responses (e.g. raw HTML scraping) may exhibit higher variance.
+3. **Statistical Interval**: Predictions provide empirical prediction intervals (~80% LOTO coverage), not guarantees against infinite loops or divergent agent reasoning.
+4. **Out-of-Distribution Flags**: Tasks exceeding length thresholds or tool boundaries are clearly flagged with `out_of_distribution=True` and specific advisory reasons.
+
+---
+
+## Citation
+
+If you use Citadel Predict in your research or applications, please cite:
+
+```bibtex
+@software{Athul_Citadel_2026,
+  author = {Athul},
+  title = {{Citadel: Pre-execution Token Budget and Cost Predictor for AI Agents}},
+  year = {2026},
+  url = {https://github.com/Athullvr/Citadel},
+  version = {0.1.1}
+}
+```
+
+---
+
+## License
+
+[MIT License](LICENSE) © 2026 Athul
