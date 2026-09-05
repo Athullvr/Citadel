@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Citadel: Pre-execution Token Budget and Cost Predictor for AI Agents"
+authors:
+  - given-names: "Athul"
+version: 0.1.1
+date-released: 2026-09-05
+url: "https://github.com/Athullvr/Citadel"
+repository-code: "https://github.com/Athullvr/Citadel"
+license: MIT
+keywords:
+  - "ai"
+  - "ai-agents"
+  - "token-budget"
+  - "cost-prediction"
+  - "llm"
+  - "mcp"
+  - "guardrails"
+abstract: "Citadel Predict is a pre-execution token budget and cost prediction platform for autonomous AI agent workflows. It predicts token consumption bounds and out-of-distribution risks before multi-step tool loops or agent execution begin."
