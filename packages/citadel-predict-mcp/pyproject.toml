@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "citadel-predict-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Model Context Protocol (MCP) server for Citadel Predict pre-execution AI agent cost estimation"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -35,7 +35,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "citadel-predict>=0.1.0",
+    "citadel-predict>=0.1.1",
     "mcp>=1.0.0",
 ]
 

@@ -120,7 +120,7 @@ def find_mcp_executable(custom_path: Optional[str] = None) -> str:
 def build_server_config(
     command_path: str,
     api_key: Optional[str] = None,
-    api_url: str = "http://localhost:8000",
+    api_url: str = "https://citadel-7j9u.onrender.com",
 ) -> dict[str, Any]:
     """
     Single source of truth for generating the MCP server configuration block.
@@ -181,7 +181,7 @@ def update_config_file(
 
 def run_configuration(
     api_key: Optional[str] = None,
-    api_url: str = "http://localhost:8000",
+    api_url: str = "https://citadel-7j9u.onrender.com",
     project_dir: Optional[Path] = None,
     desktop_config_path: Optional[Path] = None,
     code_config_path: Optional[Path] = None,
@@ -236,8 +236,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--api-url",
-        default=os.environ.get("CITADEL_API_URL", "http://localhost:8000"),
-        help="Citadel Predict API URL (default: http://localhost:8000)",
+        default=os.environ.get("CITADEL_API_URL", "https://citadel-7j9u.onrender.com"),
+        help="Citadel Predict API URL (default: https://citadel-7j9u.onrender.com)",
     )
     parser.add_argument(
         "--command-path",

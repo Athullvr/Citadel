@@ -243,8 +243,10 @@ def test_main_help(capsys):
 
 
 def test_main_version(capsys):
+    from citadel_predict_mcp import __version__
+
     with patch("sys.argv", ["citadel-predict-mcp", "--version"]):
         main()
         captured = capsys.readouterr()
-        assert "citadel-predict-mcp v0.1.0" in captured.out
+        assert f"citadel-predict-mcp v{__version__}" in captured.out
 
