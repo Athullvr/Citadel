@@ -23,6 +23,10 @@ frontend/out/
 .env
 .env.*
 !.env.example
+*.key
+*.pem
+*credentials*.json
+config.toml
 
 # IDE & Agents
 .agents/
