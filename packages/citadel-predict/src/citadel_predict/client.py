@@ -44,7 +44,7 @@ class CitadelClient:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "citadel-predict-python/0.1.0",
+            "User-Agent": "citadel-predict-python/0.1.1",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"

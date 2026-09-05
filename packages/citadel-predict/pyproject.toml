@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "citadel-predict"
-version = "0.1.0"
+version = "0.1.1"
 description = "Pre-execution LLM token budget and cost prediction client for AI agents"
 readme = "README.md"
 requires-python = ">=3.9"

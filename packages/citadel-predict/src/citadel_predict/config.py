@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
         tomllib = None  # type: ignore[assignment]
 
 
-DEFAULT_API_URL = "http://localhost:8000"
+DEFAULT_API_URL = "https://citadel-7j9u.onrender.com"
 DEFAULT_CONFIG_PATH = Path.home() / ".citadel" / "config.toml"
 
 
