@@ -45,6 +45,10 @@ def test_estimate_agent_cost_success(mcp_server):
             "expected_tokens": 3200,
             "low_tokens": 1500,
             "high_tokens": 5800,
+            "expected_cost_usd": 0.0192,
+            "low_cost_usd": 0.009,
+            "high_cost_usd": 0.0348,
+            "cost_note": "Cost estimated using Anthropic published rates",
             "out_of_distribution": False,
             "ood_reasons": [],
             "confidence": "high",
@@ -70,8 +74,12 @@ def test_estimate_agent_cost_success(mcp_server):
             assert data["expected_tokens"] == 3200
             assert data["low_tokens"] == 1500
             assert data["high_tokens"] == 5800
+            assert data["expected_cost_usd"] == 0.0192
+            assert data["low_cost_usd"] == 0.009
+            assert data["high_cost_usd"] == 0.0348
             assert data["out_of_distribution"] is False
-            assert "Expected: 3,200 tokens" in data["summary"]
+            assert "Expected: 3,200 tokens (~$0.02)" in data["summary"]
+            assert "(Range: 1,500 – 5,800 tokens (~$0.01 – $0.03))" in data["summary"]
 
             mock_predict.assert_called_once_with(
                 task_text="Audit repository and draft report",

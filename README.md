@@ -5,7 +5,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/citadel-predict.svg)](https://pypi.org/project/citadel-predict/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Citadel Predict** is a pre-execution token budget and cost prediction platform for autonomous AI agent workflows. It predicts the LLM token consumption of an agent run **before the agent executes** — outputting a calibrated uncertainty range (`[low, expected, high]`), driving factor explanations, and out-of-distribution (OOD) risk flags.
+**Citadel Predict** is a pre-execution token budget and cost prediction platform for autonomous AI agent workflows. It predicts the LLM token consumption and dollar cost of an agent run **before the agent executes** — outputting a calibrated uncertainty range (`[low, expected, high]` tokens and USD), driving factor explanations, and out-of-distribution (OOD) risk flags.
 
 ---
 
@@ -13,7 +13,7 @@
 
 Existing agent governance and observability tools (Langfuse, Portkey, LiteLLM, Helicone, LangSmith) are **reactive** — they record tokens and costs *during* or *after* execution.
 
-**Citadel Predict** is **predictive** — forecasting token consumption and cost bounds *before* initiating expensive agent loops, enabling pre-flight budget guardrails, dynamic model routing, and human-in-the-loop approvals.
+**Citadel Predict** is **predictive** — forecasting token consumption and dollar cost bounds *before* initiating expensive agent loops, enabling pre-flight budget guardrails, dynamic model routing, and human-in-the-loop approvals.
 
 ---
 
@@ -46,12 +46,13 @@ prediction = predict_cost(
     tools=["web_search", "fetch_url", "draft_document"]
 )
 
-print(f"Expected: {prediction['expected_tokens']:,} tokens (Range: {prediction['low_tokens']:,} – {prediction['high_tokens']:,})")
+print(f"Expected: {prediction['expected_tokens']:,} tokens (~${prediction['expected_cost_usd']:.2f})")
+print(f"Range: {prediction['low_tokens']:,} – {prediction['high_tokens']:,} tokens (~${prediction['low_cost_usd']:.2f} – ${prediction['high_cost_usd']:.2f})")
 print(f"Driving Factors: {prediction['driving_factors']}")
 
-# Guardrail: Escalate if upper bound exceeds budget
-if prediction["high_tokens"] > 10000:
-    print("Warning: Upper estimate exceeds token budget. Escalating for human review.")
+# Guardrail: Escalate if upper bound exceeds dollar or token budget
+if prediction["high_cost_usd"] and prediction["high_cost_usd"] > 1.00:
+    print("Warning: Upper estimate exceeds $1.00 cost limit. Escalating for human review.")
 ```
 
 ---
@@ -151,7 +152,7 @@ npm run dev
 
 ## Running Tests & Quality Checks
 
-Execute all 73 automated tests across the monorepo:
+Execute all 80+ automated tests across the monorepo:
 
 ```bash
 pytest backend/tests packages/citadel-predict/tests packages/citadel-predict-mcp/tests -v
@@ -178,6 +179,7 @@ To deploy your own instance:
 2. **Synthetic Tool Sizing**: Collected with deterministic mock tools with representative output expansion. Real tools with massive dynamic responses (e.g. raw HTML scraping) may exhibit higher variance.
 3. **Statistical Interval**: Predictions provide empirical prediction intervals (~80% LOTO coverage), not guarantees against infinite loops or divergent agent reasoning.
 4. **Out-of-Distribution Flags**: Tasks exceeding length thresholds or tool boundaries are clearly flagged with `out_of_distribution=True` and specific advisory reasons.
+5. **Input/Output Split Approximation**: Dollar cost estimates apply published provider rates using an empirical 75% input / 25% output token split based on multi-turn ReAct agent trajectory composition (where prompt histories and tool outputs compound). Dollar figures are calibrated approximations, not exact billing invoices.
 
 ---
 
@@ -191,7 +193,7 @@ If you use Citadel Predict in your research or applications, please cite:
   title = {{Citadel: Pre-execution Token Budget and Cost Predictor for AI Agents}},
   year = {2026},
   url = {https://github.com/Athullvr/Citadel},
-  version = {0.1.1}
+  version = {0.2.0}
 }
 ```
 
