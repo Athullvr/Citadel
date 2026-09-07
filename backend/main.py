@@ -309,6 +309,22 @@ class PredictResponse(BaseModel):
     low_tokens: int
     expected_tokens: int
     high_tokens: int
+    expected_cost_usd: float | None = Field(
+        default=None,
+        description="Estimated expected dollar cost in USD (75% input / 25% output approximation).",
+    )
+    low_cost_usd: float | None = Field(
+        default=None,
+        description="Estimated lower bound dollar cost in USD.",
+    )
+    high_cost_usd: float | None = Field(
+        default=None,
+        description="Estimated upper bound dollar cost in USD.",
+    )
+    cost_note: str | None = Field(
+        default=None,
+        description="Information or assumptions regarding dollar cost estimation.",
+    )
     driving_factors: list[str]
     features: dict[str, Any]
     confidence: str

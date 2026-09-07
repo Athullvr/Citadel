@@ -15,6 +15,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from features import FEATURE_NAMES, extract_features
+from pricing import calculate_token_cost_range
 
 BASE_DIR = Path(os.environ.get("DATA_COLLECTION_DIR", str(Path(__file__).resolve().parent))).resolve()
 CALIBRATION_DIR = BASE_DIR / "calibration_data"
@@ -129,7 +130,7 @@ def predict(
     bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Predict token cost range [low, expected, high] for a given task and tool list.
+    Predict token cost range [low, expected, high] and dollar cost for a given task and tool list.
     """
     if bundle is None:
         bundle = load_bundle(model_id=model_id)
@@ -141,6 +142,17 @@ def predict(
     low = float(np.exp(pred_log + bundle["q_low"]))
     expected = float(np.exp(pred_log))
     high = float(np.exp(pred_log + bundle["q_high"]))
+
+    low_tokens = round(low)
+    expected_tokens = round(expected)
+    high_tokens = round(high)
+
+    low_cost, expected_cost, high_cost, cost_note = calculate_token_cost_range(
+        low_tokens=low_tokens,
+        expected_tokens=expected_tokens,
+        high_tokens=high_tokens,
+        model_id=model_id,
+    )
 
     driving_factors = []
     if feats["num_tools"] >= 3:
@@ -170,9 +182,13 @@ def predict(
 
     return {
         "model_id": model_id,
-        "low_tokens": round(low),
-        "expected_tokens": round(expected),
-        "high_tokens": round(high),
+        "low_tokens": low_tokens,
+        "expected_tokens": expected_tokens,
+        "high_tokens": high_tokens,
+        "expected_cost_usd": expected_cost,
+        "low_cost_usd": low_cost,
+        "high_cost_usd": high_cost,
+        "cost_note": cost_note,
         "features": feats,
         "driving_factors": driving_factors,
         "confidence": confidence,
@@ -194,7 +210,9 @@ if __name__ == "__main__":
     print(f"Model: {result['model_id']}")
     print(f"Task: {text}")
     print(f"Tools: {tools}")
-    print(f"Predicted range: {result['low_tokens']:,} - {result['expected_tokens']:,} - {result['high_tokens']:,} tokens")
+    cost_str = f" (~${result['expected_cost_usd']:.2f})" if result['expected_cost_usd'] is not None else ""
+    cost_range_str = f" (~${result['low_cost_usd']:.2f} – ${result['high_cost_usd']:.2f})" if result['low_cost_usd'] is not None else ""
+    print(f"Predicted tokens: {result['low_tokens']:,} - {result['expected_tokens']:,} - {result['high_tokens']:,} tokens{cost_range_str}")
     print(f"Confidence: {result['confidence']} (OOD: {result['out_of_distribution']})")
     if result["ood_reasons"]:
         print("OOD Warnings:")
