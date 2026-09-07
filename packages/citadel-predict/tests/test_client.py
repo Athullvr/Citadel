@@ -11,6 +11,10 @@ MOCK_PREDICT_RESPONSE = {
     "low_tokens": 1500,
     "expected_tokens": 3200,
     "high_tokens": 5800,
+    "expected_cost_usd": 0.0192,
+    "low_cost_usd": 0.009,
+    "high_cost_usd": 0.0348,
+    "cost_note": "Cost estimated using Anthropic published rates",
     "driving_factors": ["Tool count (2)", "Research action verb"],
     "features": {"char_len": 45, "word_count": 8, "num_tools": 2},
     "confidence": "high",
@@ -46,6 +50,9 @@ def test_predict_happy_path():
         assert result["expected_tokens"] == 3200
         assert result["low_tokens"] == 1500
         assert result["high_tokens"] == 5800
+        assert result["expected_cost_usd"] == 0.0192
+        assert result["low_cost_usd"] == 0.009
+        assert result["high_cost_usd"] == 0.0348
         assert result["confidence"] == "high"
         assert result["out_of_distribution"] is False
 

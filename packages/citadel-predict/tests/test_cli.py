@@ -26,6 +26,10 @@ SAMPLE_RESULT = {
     "low_tokens": 1200,
     "expected_tokens": 3000,
     "high_tokens": 5500,
+    "expected_cost_usd": 0.018,
+    "low_cost_usd": 0.0072,
+    "high_cost_usd": 0.033,
+    "cost_note": "Cost estimated using Anthropic published rates",
     "driving_factors": ["Tool count (2)", "Action verbs"],
     "features": {"num_tools": 2},
     "confidence": "high",
@@ -40,9 +44,23 @@ def test_cli_success_formatted(capsys):
         assert code == EXIT_SUCCESS
         captured = capsys.readouterr()
         assert "CITADEL PREDICT — TOKEN BUDGET ESTIMATE" in captured.out
-        assert "3,000 tokens" in captured.out
-        assert "1,200 – 5,500 tokens" in captured.out
+        assert "3,000 tokens (~$0.02)" in captured.out
+        assert "1,200 – 5,500 tokens (~$0.01 – $0.03)" in captured.out
         assert "Tool count (2)" in captured.out
+
+
+def test_cli_success_formatted_without_cost(capsys):
+    unpriced_result = dict(SAMPLE_RESULT)
+    unpriced_result["expected_cost_usd"] = None
+    unpriced_result["low_cost_usd"] = None
+    unpriced_result["high_cost_usd"] = None
+
+    with patch("citadel_predict.cli.CitadelClient.predict", return_value=unpriced_result):
+        code = main(["--task", "Research competitors"])
+        assert code == EXIT_SUCCESS
+        captured = capsys.readouterr()
+        assert "3,000 tokens" in captured.out
+        assert "(~$" not in captured.out
 
 
 def test_cli_success_json(capsys):
@@ -52,6 +70,9 @@ def test_cli_success_json(capsys):
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
         assert parsed["expected_tokens"] == 3000
+        assert parsed["expected_cost_usd"] == 0.018
+        assert parsed["low_cost_usd"] == 0.0072
+        assert parsed["high_cost_usd"] == 0.033
         assert parsed["model_id"] == "claude-sonnet"
 
 

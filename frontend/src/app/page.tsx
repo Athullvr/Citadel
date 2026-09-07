@@ -12,6 +12,10 @@ type PredictResponse = {
   low_tokens: number;
   expected_tokens: number;
   high_tokens: number;
+  expected_cost_usd?: number | null;
+  low_cost_usd?: number | null;
+  high_cost_usd?: number | null;
+  cost_note?: string | null;
   driving_factors: string[];
   features: Record<string, number>;
   confidence: "high" | "moderate" | "low";
@@ -44,12 +48,31 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
-function RangeBar({ low, expected, high }: { low: number; expected: number; high: number }) {
+function RangeBar({
+  low,
+  expected,
+  high,
+  expectedCost,
+  lowCost,
+  highCost,
+}: {
+  low: number;
+  expected: number;
+  high: number;
+  expectedCost?: number | null;
+  lowCost?: number | null;
+  highCost?: number | null;
+}) {
   const logLow = Math.log(Math.max(low, 1));
   const logHigh = Math.log(Math.max(high, low + 1));
   const logExpected = Math.log(Math.max(expected, 1));
   const pct = ((logExpected - logLow) / (logHigh - logLow)) * 100;
   const clampedPct = Math.min(97, Math.max(3, pct));
+
+  const hasCost =
+    typeof expectedCost === "number" &&
+    typeof lowCost === "number" &&
+    typeof highCost === "number";
 
   return (
     <div className="w-full">
@@ -57,15 +80,24 @@ function RangeBar({ low, expected, high }: { low: number; expected: number; high
         <div
           className="absolute top-1/2 h-5 w-5 -translate-y-1/2 -translate-x-1/2 rounded-full border-2 border-white bg-zinc-900 shadow dark:border-zinc-900 dark:bg-zinc-100"
           style={{ left: `${clampedPct}%` }}
-          title={`Expected: ${formatTokens(expected)} tokens`}
+          title={`Expected: ${formatTokens(expected)} tokens${
+            hasCost ? ` (~$${expectedCost!.toFixed(2)})` : ""
+          }`}
         />
       </div>
       <div className="mt-2 flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
-        <span>Low: {formatTokens(low)}</span>
+        <span>
+          Low: {formatTokens(low)}
+          {hasCost && ` (~$${lowCost!.toFixed(2)})`}
+        </span>
         <span className="font-semibold text-zinc-800 dark:text-zinc-200">
           Expected: {formatTokens(expected)}
+          {hasCost && ` (~$${expectedCost!.toFixed(2)})`}
         </span>
-        <span>High: {formatTokens(high)}</span>
+        <span>
+          High: {formatTokens(high)}
+          {hasCost && ` (~$${highCost!.toFixed(2)})`}
+        </span>
       </div>
     </div>
   );
@@ -288,7 +320,14 @@ export default function Home() {
               </span>
             </div>
 
-            <RangeBar low={result.low_tokens} expected={result.expected_tokens} high={result.high_tokens} />
+            <RangeBar
+              low={result.low_tokens}
+              expected={result.expected_tokens}
+              high={result.high_tokens}
+              expectedCost={result.expected_cost_usd}
+              lowCost={result.low_cost_usd}
+              highCost={result.high_cost_usd}
+            />
 
             {result.out_of_distribution && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/40">
@@ -320,10 +359,17 @@ export default function Home() {
               </ul>
             </div>
 
-            <p className="border-t border-zinc-100 pt-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-              Model: <code className="font-mono text-zinc-700 dark:text-zinc-300">{result.model_id}</code> (N=20 tasks, 80 runs baseline).
-              This is a statistical pattern match with an empirical calibration band, not an exact simulator.
-            </p>
+            <div className="border-t border-zinc-100 pt-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400 space-y-1">
+              <p>
+                Model: <code className="font-mono text-zinc-700 dark:text-zinc-300">{result.model_id}</code> (N=20 tasks, 80 runs baseline).
+                This is a statistical pattern match with an empirical calibration band, not an exact simulator.
+              </p>
+              {result.cost_note && (
+                <p className="text-zinc-400 dark:text-zinc-500 italic">
+                  💡 {result.cost_note}
+                </p>
+              )}
+            </div>
           </section>
         )}
 

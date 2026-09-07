@@ -71,19 +71,34 @@ def create_server() -> MCPServer:
                 num_tools=num_tools,
                 model_id=model_id,
             )
+            expected_cost = result.get("expected_cost_usd")
+            low_cost = result.get("low_cost_usd")
+            high_cost = result.get("high_cost_usd")
+
+            cost_str = f" (~${expected_cost:.2f})" if expected_cost is not None else ""
+            cost_range_str = (
+                f" (~${low_cost:.2f} – ${high_cost:.2f})"
+                if low_cost is not None and high_cost is not None
+                else ""
+            )
+
             return {
                 "success": True,
                 "model_id": result.get("model_id", model_id),
                 "expected_tokens": result.get("expected_tokens"),
                 "low_tokens": result.get("low_tokens"),
                 "high_tokens": result.get("high_tokens"),
+                "expected_cost_usd": expected_cost,
+                "low_cost_usd": low_cost,
+                "high_cost_usd": high_cost,
+                "cost_note": result.get("cost_note"),
                 "out_of_distribution": result.get("out_of_distribution", False),
                 "ood_reasons": result.get("ood_reasons", []),
                 "confidence": result.get("confidence", "normal"),
                 "driving_factors": result.get("driving_factors", []),
                 "summary": (
-                    f"Expected: {result.get('expected_tokens', 0):,} tokens "
-                    f"(Range: {result.get('low_tokens', 0):,} – {result.get('high_tokens', 0):,})"
+                    f"Expected: {result.get('expected_tokens', 0):,} tokens{cost_str} "
+                    f"(Range: {result.get('low_tokens', 0):,} – {result.get('high_tokens', 0):,} tokens{cost_range_str})"
                 ),
             }
         except CitadelAuthError as exc:

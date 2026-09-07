@@ -54,6 +54,11 @@ def test_predict_happy_path(client):
     data = res.json()
     assert data["model_id"] == "claude-sonnet"
     assert data["low_tokens"] < data["expected_tokens"] <= data["high_tokens"]
+    assert "expected_cost_usd" in data
+    assert "low_cost_usd" in data
+    assert "high_cost_usd" in data
+    assert "cost_note" in data
+    assert data["low_cost_usd"] <= data["expected_cost_usd"] <= data["high_cost_usd"]
     assert len(data["driving_factors"]) > 0
     assert "confidence" in data
     assert isinstance(data["out_of_distribution"], bool)
@@ -245,6 +250,10 @@ def test_e2e_unmocked_frozen_bundle_prediction(client):
     assert data["model_id"] == "claude-sonnet"
     assert data["low_tokens"] > 0
     assert data["low_tokens"] <= data["expected_tokens"] <= data["high_tokens"]
+    assert data["expected_cost_usd"] is not None
+    assert data["low_cost_usd"] is not None
+    assert data["high_cost_usd"] is not None
+    assert data["low_cost_usd"] <= data["expected_cost_usd"] <= data["high_cost_usd"]
     assert isinstance(data["driving_factors"], list)
     assert len(data["driving_factors"]) > 0
     assert "features" in data
