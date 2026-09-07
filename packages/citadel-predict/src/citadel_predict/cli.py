@@ -90,13 +90,31 @@ def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def format_pretty_output(result: dict) -> str:
+    expected_tokens = result.get("expected_tokens", 0)
+    low_tokens = result.get("low_tokens", 0)
+    high_tokens = result.get("high_tokens", 0)
+
+    expected_cost = result.get("expected_cost_usd")
+    low_cost = result.get("low_cost_usd")
+    high_cost = result.get("high_cost_usd")
+
+    if expected_cost is not None:
+        expected_str = f"{expected_tokens:,} tokens (~${expected_cost:.2f})"
+    else:
+        expected_str = f"{expected_tokens:,} tokens"
+
+    if low_cost is not None and high_cost is not None:
+        range_str = f"{low_tokens:,} – {high_tokens:,} tokens (~${low_cost:.2f} – ${high_cost:.2f})"
+    else:
+        range_str = f"{low_tokens:,} – {high_tokens:,} tokens"
+
     lines = [
         "=" * 50,
         "  CITADEL PREDICT — TOKEN BUDGET ESTIMATE",
         "=" * 50,
         f"Model:           {result.get('model_id')}",
-        f"Expected Tokens: {result.get('expected_tokens', 0):,} tokens",
-        f"Predicted Range: {result.get('low_tokens', 0):,} – {result.get('high_tokens', 0):,} tokens",
+        f"Expected Tokens: {expected_str}",
+        f"Predicted Range: {range_str}",
         f"Confidence:      {result.get('confidence', 'unknown').upper()}",
     ]
 

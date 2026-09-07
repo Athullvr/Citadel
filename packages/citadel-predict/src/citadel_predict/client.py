@@ -44,7 +44,7 @@ class CitadelClient:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "citadel-predict-python/0.1.1",
+            "User-Agent": "citadel-predict-python/0.2.0",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -136,12 +136,16 @@ class CitadelClient:
             model_id: Model calibration identifier (default: 'claude-sonnet').
 
         Returns:
-            Dictionary matching the API response schema exactly:
+            Dictionary matching the API response schema:
             {
                 "model_id": "claude-sonnet",
                 "low_tokens": int,
                 "expected_tokens": int,
                 "high_tokens": int,
+                "expected_cost_usd": Optional[float],
+                "low_cost_usd": Optional[float],
+                "high_cost_usd": Optional[float],
+                "cost_note": Optional[str],
                 "driving_factors": list[str],
                 "features": dict,
                 "confidence": str,
