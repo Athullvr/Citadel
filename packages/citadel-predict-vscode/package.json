@@ -1,0 +1,129 @@
+{
+  "name": "citadel-predict-vscode",
+  "displayName": "Citadel Predict — Live Prompt Cost",
+  "description": "Live, pre-execution token budget and USD cost predictor for AI agent prompts in VS Code and Antigravity IDE",
+  "version": "0.1.0",
+  "publisher": "citadel-predict",
+  "icon": "media/citadel-icon.svg",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "citadel",
+    "cost",
+    "tokens",
+    "llm",
+    "agent",
+    "antigravity",
+    "prompt",
+    "budget"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:citadelPredict.costView"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "citadel-predict-sidebar",
+          "title": "Citadel Predict",
+          "icon": "media/citadel-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "citadel-predict-sidebar": [
+        {
+          "type": "webview",
+          "id": "citadelPredict.costView",
+          "name": "Live Prompt Cost",
+          "icon": "media/citadel-icon.svg",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "citadelPredict.focusView",
+        "title": "Citadel Predict: Focus Prompt Cost Panel",
+        "category": "Citadel Predict"
+      },
+      {
+        "command": "citadelPredict.estimateSelectedText",
+        "title": "Citadel Predict: Estimate Selected Prompt",
+        "category": "Citadel Predict"
+      },
+      {
+        "command": "citadelPredict.clearPrompt",
+        "title": "Citadel Predict: Clear Prompt",
+        "category": "Citadel Predict"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "citadelPredict.estimateSelectedText",
+          "when": "editorHasSelection",
+          "group": "citadel"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "citadelPredict.clearPrompt",
+          "when": "view == citadelPredict.costView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Citadel Predict",
+      "properties": {
+        "citadelPredict.apiUrl": {
+          "type": "string",
+          "default": "https://citadel-7j9u.onrender.com",
+          "description": "Base URL of the Citadel Predict API endpoint."
+        },
+        "citadelPredict.defaultModel": {
+          "type": "string",
+          "default": "claude-sonnet",
+          "description": "Default model calibration identifier (e.g. 'claude-sonnet', 'gemini-pro')."
+        },
+        "citadelPredict.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Bearer API key for authenticated Citadel Predict instances (CITADEL_API_KEY)."
+        },
+        "citadelPredict.debounceDelayMs": {
+          "type": "number",
+          "default": 400,
+          "description": "Debounce delay in milliseconds before dispatching cost prediction requests as you type."
+        },
+        "citadelPredict.timeoutSeconds": {
+          "type": "number",
+          "default": 10,
+          "description": "HTTP request timeout in seconds when reaching the Citadel Predict API."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./dist/test/runTests.js",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.3"
+  }
+}

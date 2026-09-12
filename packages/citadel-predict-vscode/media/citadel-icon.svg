@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" fill="none">
+  <defs>
+    <linearGradient id="citadelGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="20%" y1="10%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#4338ca" stop-opacity="0.9" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Outer Shield / Hexagonal Citadel Boundary -->
+  <polygon points="50,6 88,24 88,68 50,94 12,68 12,24" 
+           stroke="url(#citadelGrad)" stroke-width="4" stroke-linejoin="round" fill="none" />
+
+  <!-- Inner Citadel Structure & Token Prism -->
+  <polygon points="50,16 78,30 78,64 50,84 22,64 22,30" 
+           fill="url(#shieldGrad)" fill-opacity="0.25" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" />
+
+  <!-- Central Token Core -->
+  <polygon points="50,28 66,38 66,58 50,68 34,58 34,38" 
+           fill="url(#citadelGrad)" />
+
+  <!-- Pulse Center / Spark -->
+  <circle cx="50" cy="48" r="4" fill="#ffffff" filter="url(#glow)" />
+
+  <!-- Token Flow Beams -->
+  <line x1="50" y1="28" x2="50" y2="16" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />
+  <line x1="50" y1="68" x2="50" y2="84" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />
+  <line x1="34" y1="38" x2="22" y2="30" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" />
+  <line x1="66" y1="38" x2="78" y2="30" stroke="#a855f7" stroke-width="2" stroke-linecap="round" />
+</svg>
