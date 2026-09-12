@@ -4,7 +4,13 @@
   "description": "Live, pre-execution token budget and USD cost predictor for AI agent prompts in VS Code and Antigravity IDE",
   "version": "0.1.0",
   "publisher": "citadel-predict",
-  "icon": "media/citadel-icon.svg",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Athullvr/Citadel",
+    "directory": "packages/citadel-predict-vscode"
+  },
+  "icon": "media/citadel-icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },

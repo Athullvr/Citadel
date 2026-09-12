@@ -87,6 +87,23 @@ python scripts/configure_mcp.py --non-interactive
 
 ---
 
+### 3. VS Code & Antigravity IDE Extension (`citadel-predict-vscode`)
+
+A sidebar panel for developers drafting agent prompts in VS Code, Google Antigravity IDE, Cursor, and Zed.
+
+- **Live Debounced Cost Estimation**: Instant token bounds and dollar approximations as you type.
+- **Tool Impact Simulator**: Checkbox/chip toggles for available tools (`web_search`, `fetch_url`, `read_document`, etc.).
+- **One-Click Copy**: Refine and copy your prompt directly into Antigravity Chat or Claude Code.
+
+```bash
+cd packages/citadel-predict-vscode
+npm install
+npm run package
+code --install-extension citadel-predict-vscode-0.1.0.vsix
+```
+
+---
+
 ## How It Works
 
 Citadel Predict extracts **10 structural & lexical features** directly from the task prompt and available tool schemas:
@@ -122,7 +139,8 @@ Citadel/
 ├── frontend/                     # Next.js 16 Web Dashboard & interactive estimator
 ├── packages/
 │   ├── citadel-predict/          # Official Python SDK & CLI (PyPI: citadel-predict)
-│   └── citadel-predict-mcp/      # Official MCP Server (PyPI: citadel-predict-mcp)
+│   ├── citadel-predict-mcp/      # Official MCP Server (PyPI: citadel-predict-mcp)
+│   └── citadel-predict-vscode/   # VS Code & Antigravity IDE Live Prompt Cost Extension
 ├── scripts/                      # Setup scripts & git integrity hooks
 ├── CITATION.cff                  # Citation metadata
 ├── LICENSE                       # MIT License
