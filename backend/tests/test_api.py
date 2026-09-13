@@ -103,8 +103,8 @@ def test_predict_validation_errors_standardized(client):
     assert "message" in data
     assert "detail" in data
 
-    # Exceeds max_length 4000
-    res = client.post("/api/predict", json={"task_text": "X" * 4001, "tools": []})
+    # Exceeds max_length 50000
+    res = client.post("/api/predict", json={"task_text": "X" * 50001, "tools": []})
     assert res.status_code == 422
     assert res.json()["error"] == "validation_error"
 

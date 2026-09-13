@@ -158,6 +158,19 @@ export class CitadelClient {
       }
 
       if (response.status === 422) {
+        if (
+          req.task_text.length > 4000 &&
+          (rawDetail.includes('4000') ||
+            rawDetail.toLowerCase().includes('string_too_long') ||
+            rawDetail.toLowerCase().includes('at most'))
+        ) {
+          // Fallback for deployed backend instances capping at 4000 characters
+          return this.predict({
+            ...req,
+            task_text: req.task_text.slice(0, 4000),
+          });
+        }
+
         throw new CitadelApiError({
           message: `Validation error: ${rawDetail}`,
           statusCode: 422,

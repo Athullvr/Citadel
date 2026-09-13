@@ -238,5 +238,55 @@ export async function runClientTests(): Promise<void> {
     global.fetch = originalFetch;
   }
 
+  // 8. Test 5000+ char prompt with 422 fallback
+  {
+    const originalFetch = global.fetch;
+    let callCount = 0;
+    let lastPayload: any = null;
+
+    global.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      callCount++;
+      lastPayload = JSON.parse(init?.body as string);
+      if (callCount === 1) {
+        // First call: backend rejects > 4000 characters
+        return {
+          ok: false,
+          status: 422,
+          statusText: 'Unprocessable Entity',
+          json: async () => ({
+            error: 'validation_error',
+            message: 'body.task_text: String should have at most 4000 characters',
+            detail: 'String should have at most 4000 characters',
+          }),
+        } as Response;
+      }
+      // Second call: trimmed payload accepted
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          expected_tokens: 45000,
+          expected_cost_usd: 0.35,
+          confidence: 'high',
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const longText = 'A'.repeat(6000);
+    const client = new CitadelClient(baseConfig);
+    const result = await client.predict({
+      task_text: longText,
+      tools: ['web_search'],
+      model_id: 'claude-sonnet',
+    });
+
+    assert.strictEqual(callCount, 2);
+    assert.strictEqual(lastPayload.task_text.length, 4000);
+    assert.strictEqual(result.expected_tokens, 45000);
+    console.log('✓ Long prompt 5000+ char 422 fallback test passed');
+
+    global.fetch = originalFetch;
+  }
+
   console.log('\nAll CitadelClient unit tests passed successfully!');
 }

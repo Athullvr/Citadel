@@ -279,8 +279,8 @@ class PredictRequest(BaseModel):
     task_text: str = Field(
         ...,
         min_length=1,
-        max_length=4000,
-        description="Raw task description for the agent run (max 4000 characters).",
+        max_length=50000,
+        description="Raw task description for the agent run (max 50000 characters).",
         examples=["Research competitor pricing across 3 sources and draft a summary."],
     )
     tools: list[str] = Field(

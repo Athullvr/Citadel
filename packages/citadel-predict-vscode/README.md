@@ -33,7 +33,7 @@ Draft your agent prompts and see a **live, debounced token budget and USD cost e
 | | Search the web for top 5 AI benchmarks, fetch details | |
 | | on each, and draft a structured comparison report.    | |
 | +-------------------------------------------------------+ |
-| 112 / 4000                           [ Insert Sample... ▾]|
+| 112 chars                             [ Insert Sample... ▾]|
 |                                                           |
 | MODEL TARGET                                              |
 | [ Claude 3.5 Sonnet (Calibrated ✓)                     ▾] |

@@ -228,12 +228,11 @@ export class CitadelViewProvider implements vscode.WebviewViewProvider {
         id="prompt-input"
         class="prompt-textarea"
         placeholder="Type or paste your agent prompt here... (e.g. 'Search for recent sales figures, fetch the report, and draft a summary document.')"
-        maxlength="4000"
         spellcheck="false"
       ></textarea>
     </div>
     <div class="input-meta-bar">
-      <span id="char-counter" class="char-counter">0 / 4000</span>
+      <span id="char-counter" class="char-counter">0 chars</span>
       <select id="samples-select" class="link-btn" style="background: transparent; border: none; cursor: pointer;">
         <option value="">Insert Sample...</option>
       </select>

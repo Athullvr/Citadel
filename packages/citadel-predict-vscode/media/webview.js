@@ -141,12 +141,12 @@
   function updateCharCount() {
     if (!charCounter || !promptInput) return;
     const len = promptInput.value.length;
-    charCounter.textContent = `${len} / 4000`;
+    charCounter.textContent = `${len.toLocaleString()} char${len === 1 ? '' : 's'}`;
     
     charCounter.classList.remove('warning', 'danger');
-    if (len > 3800) {
+    if (len > 45000) {
       charCounter.classList.add('danger');
-    } else if (len > 3000) {
+    } else if (len > 35000) {
       charCounter.classList.add('warning');
     }
   }
