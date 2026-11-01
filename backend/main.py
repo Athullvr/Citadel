@@ -27,7 +27,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -88,6 +87,9 @@ from predict import (
     predict as run_predict,
 )
 from tools import TOOL_SCHEMAS
+from api_schemas import PredictRequest, PredictResponse
+from execution_feedback import router as execution_feedback_router
+from request_limits import ExecutionRequestBodyLimitMiddleware
 
 # Rate Limiter setup
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
@@ -123,9 +125,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         401: "unauthorized",
         403: "forbidden",
         404: "not_found",
+        409: "conflict",
         422: "validation_error",
+        413: "payload_too_large",
         429: "rate_limited",
         500: "internal_server_error",
+        503: "service_unavailable",
     }
     error_type = code_map.get(exc.status_code, "http_error")
     detail_str = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
@@ -184,6 +189,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+app.add_middleware(ExecutionRequestBodyLimitMiddleware)
+app.include_router(execution_feedback_router)
 
 # API Key Authentication Setup
 API_KEY_ENV = os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")
@@ -272,64 +279,6 @@ try:
     logger.info(f"Loaded default calibration bundle for model '{DEFAULT_MODEL}'")
 except (FileNotFoundError, OSError, ValueError) as e:
     logger.warning(f"Could not preload default bundle for '{DEFAULT_MODEL}': {e}")
-
-
-# Schemas with bounds
-class PredictRequest(BaseModel):
-    task_text: str = Field(
-        ...,
-        min_length=1,
-        max_length=50000,
-        description="Raw task description for the agent run (max 50000 characters).",
-        examples=["Research competitor pricing across 3 sources and draft a summary."],
-    )
-    tools: list[str] = Field(
-        default_factory=list,
-        max_length=20,
-        description="List of tool names available to the agent (max 20 tools).",
-        examples=[["web_search", "fetch_url", "draft_document"]],
-    )
-    model_id: str = Field(
-        default=DEFAULT_MODEL,
-        max_length=64,
-        description="Model calibration identifier (e.g. 'claude-sonnet').",
-    )
-
-    @field_validator("tools")
-    @classmethod
-    def validate_tool_names(cls, v: list[str]) -> list[str]:
-        for tool in v:
-            if len(tool) > 64:
-                raise ValueError(f"Tool name '{tool}' exceeds maximum length of 64 characters")
-        return v
-
-
-class PredictResponse(BaseModel):
-    model_id: str
-    low_tokens: int
-    expected_tokens: int
-    high_tokens: int
-    expected_cost_usd: float | None = Field(
-        default=None,
-        description="Estimated expected dollar cost in USD (75% input / 25% output approximation).",
-    )
-    low_cost_usd: float | None = Field(
-        default=None,
-        description="Estimated lower bound dollar cost in USD.",
-    )
-    high_cost_usd: float | None = Field(
-        default=None,
-        description="Estimated upper bound dollar cost in USD.",
-    )
-    cost_note: str | None = Field(
-        default=None,
-        description="Information or assumptions regarding dollar cost estimation.",
-    )
-    driving_factors: list[str]
-    features: dict[str, Any]
-    confidence: str
-    out_of_distribution: bool
-    ood_reasons: list[str]
 
 
 @app.get("/api/health")
