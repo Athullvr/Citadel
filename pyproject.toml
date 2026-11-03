@@ -19,6 +19,9 @@ testpaths = [
     "packages/citadel-predict/tests",
     "packages/citadel-predict-mcp/tests",
 ]
+markers = [
+    "postgres: requires a disposable PostgreSQL database configured with CITADEL_TEST_POSTGRES_URL",
+]
 pythonpath = [
     "backend",
     "data_collection",

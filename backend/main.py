@@ -77,6 +77,8 @@ DATA_COLLECTION_DIR = resolve_data_collection_dir()
 if str(DATA_COLLECTION_DIR) not in sys.path:
     sys.path.insert(0, str(DATA_COLLECTION_DIR))
 
+from api_schemas import PredictRequest, PredictResponse  # noqa: E402
+from execution_feedback import router as execution_feedback_router  # noqa: E402
 from predict import (
     DEFAULT_MODEL,
     SUPPORTED_MODELS,
@@ -86,10 +88,8 @@ from predict import (
 from predict import (
     predict as run_predict,
 )
+from request_limits import ExecutionRequestBodyLimitMiddleware  # noqa: E402
 from tools import TOOL_SCHEMAS
-from api_schemas import PredictRequest, PredictResponse
-from execution_feedback import router as execution_feedback_router
-from request_limits import ExecutionRequestBodyLimitMiddleware
 
 # Rate Limiter setup
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
