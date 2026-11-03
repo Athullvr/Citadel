@@ -190,6 +190,7 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: false
+          load: true
           tags: citadel-predict-api:test
 
       - name: Build frontend Docker image
@@ -198,7 +199,15 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           push: false
+          load: true
           tags: citadel-predict-frontend:test
+
+      - name: Verify backend image contains feedback modules and migration
+        run: |
+          docker run --rm --entrypoint sh citadel-predict-api:test -c \
+            'test -f /app/database.py && test -f /app/execution_models.py && \
+             test -f /app/execution_feedback.py && \
+             test -f /app/migrations/versions/0001_execution_feedback.py'
 
       - name: Verify backend image starts without a database migration
         run: |
@@ -211,4 +220,18 @@ jobs:
             sleep 2
           done
           docker logs citadel-backend-smoke
+          exit 1
+
+      - name: Verify frontend image serves the application
+        run: |
+          docker run --rm -d --name citadel-frontend-smoke \
+            -p 127.0.0.1:3000:3000 citadel-predict-frontend:test
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:3000/; then
+              docker stop citadel-frontend-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs citadel-frontend-smoke
           exit 1
