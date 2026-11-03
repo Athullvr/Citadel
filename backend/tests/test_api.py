@@ -196,7 +196,11 @@ def test_non_browser_server_to_server_request(client, monkeypatch):
     res = client.post("/api/predict", json=payload, headers=headers)
     assert res.status_code == 200
     assert res.json()["expected_tokens"] > 0
-    assert "access-control-allow-origin" not in res.headers or res.headers.get("access-control-allow-origin") == "*" or res.status_code == 200
+    assert (
+        "access-control-allow-origin" not in res.headers
+        or res.headers.get("access-control-allow-origin") == "*"
+        or res.status_code == 200
+    )
 
 
 def test_auth_enforcement_require_auth_flag(client, monkeypatch):
@@ -269,7 +273,8 @@ def test_e2e_unmocked_frozen_bundle_prediction(client):
     res_calc = client.post("/api/predict", json=payload_calc)
     assert res_calc.status_code == 200
     data_calc = res_calc.json()
-    assert data_calc["expected_tokens"] < data["expected_tokens"]  # Single-shot uses fewer tokens than multi-tool
+    # Single-shot uses fewer tokens than multi-tool.
+    assert data_calc["expected_tokens"] < data["expected_tokens"]
 
 
 def test_cors_allowed_origins_enforcement(client):

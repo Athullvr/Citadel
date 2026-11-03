@@ -17,7 +17,9 @@ import pandas as pd
 from features import FEATURE_NAMES, extract_features
 from pricing import calculate_token_cost_range
 
-BASE_DIR = Path(os.environ.get("DATA_COLLECTION_DIR", str(Path(__file__).resolve().parent))).resolve()
+BASE_DIR = Path(
+    os.environ.get("DATA_COLLECTION_DIR", str(Path(__file__).resolve().parent))
+).resolve()
 CALIBRATION_DIR = BASE_DIR / "calibration_data"
 
 SUPPORTED_MODELS = {"claude-sonnet"}
@@ -51,7 +53,8 @@ def get_bundle_path(model_id: str = DEFAULT_MODEL) -> Path:
 
     raise FileNotFoundError(
         f"Calibration bundle for model '{model_id}' not found. "
-        f"Searched paths: {[str(c) for c in candidates]}. Supported models: {list(SUPPORTED_MODELS)}"
+        f"Searched paths: {[str(c) for c in candidates]}. "
+        f"Supported models: {list(SUPPORTED_MODELS)}"
     )
 
 
@@ -76,7 +79,7 @@ def assess_confidence_and_ood(feats: dict[str, Any]) -> tuple[str, bool, list[st
     """
     Assess whether the input task falls outside the N=20 training distribution
     and determine the prediction confidence level.
-    
+
     Training distribution characteristics (N=20 tasks, 80 runs):
     - Tools available: 0 to 5 (only 2 tasks had 0 tools; maximum was 5)
     - Task text length: typically 20-300 characters
@@ -106,7 +109,8 @@ def assess_confidence_and_ood(feats: dict[str, Any]) -> tuple[str, bool, list[st
     # Check keyword patterns
     if feats["open_ended_keyword_hits"] == 0 and feats["narrow_keyword_hits"] == 0:
         ood_reasons.append(
-            "No recognized action keyword patterns detected (e.g. 'research', 'summarize', 'investigate'). "
+            "No recognized action keyword patterns detected "
+            "(e.g. 'research', 'summarize', 'investigate'). "
             "Estimate relies strictly on tool count and text length."
         )
 
@@ -156,7 +160,9 @@ def predict(
 
     driving_factors = []
     if feats["num_tools"] >= 3:
-        driving_factors.append(f"{feats['num_tools']} tools available -> higher branching/retry risk")
+        driving_factors.append(
+            f"{feats['num_tools']} tools available -> higher branching/retry risk"
+        )
     elif feats["num_tools"] == 0:
         driving_factors.append("no tools available -> likely single-turn, low cost")
     if feats["open_ended_keyword_hits"] > 0:
@@ -176,7 +182,9 @@ def predict(
             "(sources/emails/etc.) -> more sub-actions expected"
         )
     if not driving_factors:
-        driving_factors.append("no strong signals detected -> estimate based on task length and tool count alone")
+        driving_factors.append(
+            "no strong signals detected -> estimate based on task length and tool count alone"
+        )
 
     confidence, out_of_distribution, ood_reasons = assess_confidence_and_ood(feats)
 
@@ -210,9 +218,20 @@ if __name__ == "__main__":
     print(f"Model: {result['model_id']}")
     print(f"Task: {text}")
     print(f"Tools: {tools}")
-    cost_str = f" (~${result['expected_cost_usd']:.2f})" if result['expected_cost_usd'] is not None else ""
-    cost_range_str = f" (~${result['low_cost_usd']:.2f} – ${result['high_cost_usd']:.2f})" if result['low_cost_usd'] is not None else ""
-    print(f"Predicted tokens: {result['low_tokens']:,} - {result['expected_tokens']:,} - {result['high_tokens']:,} tokens{cost_range_str}")
+    cost_str = (
+        f" (~${result['expected_cost_usd']:.2f})"
+        if result['expected_cost_usd'] is not None
+        else ""
+    )
+    cost_range_str = (
+        f" (~${result['low_cost_usd']:.2f} \u2013 ${result['high_cost_usd']:.2f})"
+        if result['low_cost_usd'] is not None
+        else ""
+    )
+    print(
+        f"Predicted tokens: {result['low_tokens']:,} - {result['expected_tokens']:,} - "
+        f"{result['high_tokens']:,} tokens{cost_range_str}"
+    )
     print(f"Confidence: {result['confidence']} (OOD: {result['out_of_distribution']})")
     if result["ood_reasons"]:
         print("OOD Warnings:")

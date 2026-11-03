@@ -3,7 +3,7 @@ HTTP client for the Citadel Predict API.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -28,11 +28,11 @@ class CitadelClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         timeout: float = 10.0,
-        config_path: Optional[Path] = None,
-        http_client: Optional[httpx.Client] = None,
+        config_path: Path | None = None,
+        http_client: httpx.Client | None = None,
     ) -> None:
         self.api_key = resolve_api_key(api_key, config_path=config_path)
         self.base_url = resolve_api_url(base_url, config_path=config_path)
@@ -58,14 +58,18 @@ class CitadelClient:
             if isinstance(detail, list):
                 # Pydantic validation error list format
                 msg = "; ".join(
-                    f"{err.get('loc', [])}: {err.get('msg', '')}" if isinstance(err, dict) else str(err)
+                    (
+                        f"{err.get('loc', [])}: {err.get('msg', '')}"
+                        if isinstance(err, dict)
+                        else str(err)
+                    )
                     for err in detail
                 )
             elif detail:
                 msg = str(detail)
             else:
                 msg = response.text or f"HTTP error {status_code}"
-        except Exception:
+        except ValueError:
             data = None
             msg = response.text or f"HTTP error {status_code}"
 
@@ -81,7 +85,7 @@ class CitadelClient:
             )
 
         if status_code == 429:
-            retry_after: Optional[int] = None
+            retry_after: int | None = None
             raw_retry = response.headers.get("Retry-After")
             if raw_retry and raw_retry.isdigit():
                 retry_after = int(raw_retry)
@@ -122,8 +126,8 @@ class CitadelClient:
     def predict(
         self,
         task_text: str,
-        tools: Optional[list[str]] = None,
-        num_tools: Optional[int] = None,
+        tools: list[str] | None = None,
+        num_tools: int | None = None,
         model_id: str = "claude-sonnet",
     ) -> dict[str, Any]:
         """
@@ -214,12 +218,12 @@ class CitadelClient:
 
 def predict_cost(
     task_text: str,
-    tools: Optional[list[str]] = None,
-    num_tools: Optional[int] = None,
+    tools: list[str] | None = None,
+    num_tools: int | None = None,
     model_id: str = "claude-sonnet",
-    api_key: Optional[str] = None,
-    api_url: Optional[str] = None,
-    timeout: Optional[float] = None,
+    api_key: str | None = None,
+    api_url: str | None = None,
+    timeout: float | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """

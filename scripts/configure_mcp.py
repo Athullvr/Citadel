@@ -20,7 +20,7 @@ import shutil
 import sys
 import sysconfig
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def find_repo_root() -> Path:
@@ -31,7 +31,7 @@ def find_repo_root() -> Path:
     return Path.cwd()
 
 
-def get_claude_desktop_config_path(system_name: Optional[str] = None) -> Path:
+def get_claude_desktop_config_path(system_name: str | None = None) -> Path:
     """
     Returns the platform-specific path to claude_desktop_config.json.
 
@@ -46,20 +46,26 @@ def get_claude_desktop_config_path(system_name: Optional[str] = None) -> Path:
         base = Path(appdata) if appdata else (Path.home() / "AppData" / "Roaming")
         return base / "Claude" / "claude_desktop_config.json"
     elif system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
     else:  # Linux and other Unix-like OSes
         xdg_config = os.environ.get("XDG_CONFIG_HOME")
         base = Path(xdg_config) if xdg_config else (Path.home() / ".config")
         return base / "Claude" / "claude_desktop_config.json"
 
 
-def get_claude_code_settings_path(project_dir: Optional[Path] = None) -> Path:
+def get_claude_code_settings_path(project_dir: Path | None = None) -> Path:
     """Returns the project-level .claude/settings.json path for Claude Code."""
     root = project_dir or find_repo_root()
     return root / ".claude" / "settings.json"
 
 
-def find_mcp_executable(custom_path: Optional[str] = None) -> str:
+def find_mcp_executable(custom_path: str | None = None) -> str:
     """
     Locates the installed citadel-predict-mcp executable.
 
@@ -77,7 +83,11 @@ def find_mcp_executable(custom_path: Optional[str] = None) -> str:
             return str(p)
         raise RuntimeError(f"Specified command path does not exist: {custom_path}")
 
-    exe_name = "citadel-predict-mcp.exe" if platform.system() == "Windows" else "citadel-predict-mcp"
+    exe_name = (
+        "citadel-predict-mcp.exe"
+        if platform.system() == "Windows"
+        else "citadel-predict-mcp"
+    )
 
     # 1. Check active virtual environment / Python prefix first
     prefix = Path(sys.prefix)
@@ -119,7 +129,7 @@ def find_mcp_executable(custom_path: Optional[str] = None) -> str:
 
 def build_server_config(
     command_path: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     api_url: str = "https://citadel-7j9u.onrender.com",
 ) -> dict[str, Any]:
     """
@@ -180,15 +190,15 @@ def update_config_file(
 
 
 def run_configuration(
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     api_url: str = "https://citadel-7j9u.onrender.com",
-    project_dir: Optional[Path] = None,
-    desktop_config_path: Optional[Path] = None,
-    code_config_path: Optional[Path] = None,
-    command_path: Optional[str] = None,
+    project_dir: Path | None = None,
+    desktop_config_path: Path | None = None,
+    code_config_path: Path | None = None,
+    command_path: str | None = None,
     skip_desktop: bool = False,
     skip_code: bool = False,
-    system_name: Optional[str] = None,
+    system_name: str | None = None,
 ) -> dict[str, Any]:
     """
     Orchestrates the resolution and configuration of Claude Desktop and Claude Code.
@@ -208,7 +218,7 @@ def run_configuration(
 
     if not skip_desktop:
         target_desktop = desktop_config_path or get_claude_desktop_config_path(system_name)
-        modified, data = update_config_file(target_desktop, server_config)
+        modified, _ = update_config_file(target_desktop, server_config)
         results["targets"]["claude_desktop"] = {
             "path": str(target_desktop),
             "modified": modified,
@@ -216,7 +226,7 @@ def run_configuration(
 
     if not skip_code:
         target_code = code_config_path or get_claude_code_settings_path(project_dir)
-        modified, data = update_config_file(target_code, server_config)
+        modified, _ = update_config_file(target_code, server_config)
         results["targets"]["claude_code"] = {
             "path": str(target_code),
             "modified": modified,
@@ -326,7 +336,8 @@ def main() -> None:
         print("\nConfiguration completed successfully.")
         print("Restart Claude Desktop or restart your Claude Code session to apply changes.")
 
-    except Exception as exc:
+    # Keep the command-line entry point's failure reporting consistent.
+    except Exception as exc:  # noqa: BLE001
         print(f"\nError: {exc}", file=sys.stderr)
         sys.exit(1)
 

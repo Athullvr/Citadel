@@ -6,7 +6,7 @@ over stdio transport for Claude Desktop and Claude Code.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from citadel_predict import (
     CitadelAuthError,
@@ -47,8 +47,8 @@ def create_server() -> MCPServer:
     )
     def estimate_agent_cost(
         task_text: str,
-        tools: Optional[list[str]] = None,
-        num_tools: Optional[int] = None,
+        tools: list[str] | None = None,
+        num_tools: int | None = None,
         model_id: str = "claude-sonnet",
     ) -> dict[str, Any]:
         """
@@ -56,7 +56,8 @@ def create_server() -> MCPServer:
 
         Args:
             task_text: Natural language task description (1-4000 characters).
-            tools: Optional list of tool names available to the agent (e.g. ['web_search', 'draft_doc']).
+            tools: Optional tool names available to the agent, such as
+                ['web_search', 'draft_doc'].
             num_tools: Optional tool count if tool names are unspecified.
             model_id: Model calibration identifier (default: 'claude-sonnet').
 
@@ -77,7 +78,7 @@ def create_server() -> MCPServer:
 
             cost_str = f" (~${expected_cost:.2f})" if expected_cost is not None else ""
             cost_range_str = (
-                f" (~${low_cost:.2f} – ${high_cost:.2f})"
+                f" (~${low_cost:.2f} \u2013 ${high_cost:.2f})"
                 if low_cost is not None and high_cost is not None
                 else ""
             )
@@ -98,7 +99,8 @@ def create_server() -> MCPServer:
                 "driving_factors": result.get("driving_factors", []),
                 "summary": (
                     f"Expected: {result.get('expected_tokens', 0):,} tokens{cost_str} "
-                    f"(Range: {result.get('low_tokens', 0):,} – {result.get('high_tokens', 0):,} tokens{cost_range_str})"
+                    f"(Range: {result.get('low_tokens', 0):,} \u2013 "
+                    f"{result.get('high_tokens', 0):,} tokens{cost_range_str})"
                 ),
             }
         except CitadelAuthError as exc:
@@ -167,7 +169,8 @@ def create_server() -> MCPServer:
                 "message": f"Citadel Predict request error: {exc.message}",
                 "details": str(exc),
             }
-        except Exception as exc:
+        # Preserve the MCP tool's structured error contract for any unclassified failure.
+        except Exception as exc:  # noqa: BLE001
             return {
                 "success": False,
                 "error_type": "UnexpectedError",
@@ -192,7 +195,10 @@ def main() -> None:
 
         print("Citadel Predict MCP Server (stdio transport)")
         print("\nUsage:")
-        print("  citadel-predict-mcp            Run as an MCP stdio server (used by Claude Desktop/Code)")
+        print(
+            "  citadel-predict-mcp            Run as an MCP stdio server "
+            "(used by Claude Desktop/Code)"
+        )
         print("  citadel-predict-mcp --help     Show this help message")
         print("  citadel-predict-mcp --version  Show version")
         print("\nConfiguration for Claude Desktop (claude_desktop_config.json):")

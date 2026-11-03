@@ -34,7 +34,10 @@ def test_no_keyword_match_input():
 
 def test_max_length_input():
     # Long text with multiple distinct keywords and clauses
-    text = ("Research competitor features, investigate pricing, and summarize the following details. " * 40).strip()
+    text = (
+        "Research competitor features, investigate pricing, and summarize the following details. "
+        * 40
+    ).strip()
     assert len(text) > 3000
     feats = extract_features(text, ["web_search", "draft_document"])
     assert feats["text_char_len"] == len(text)
@@ -45,7 +48,10 @@ def test_max_length_input():
 
 
 def test_unicode_and_special_characters():
-    text = "🔍 Investigar 3 fuentes y redigir 2 correos electrónicos con café ☕! ¿Cuál es el resultado?"
+    text = (
+        "🔍 Investigar 3 fuentes y redigir 2 correos electrónicos con café ☕! "
+        "¿Cuál es el resultado?"
+    )
     feats = extract_features(text, ["search", "email"])
     assert feats["text_char_len"] == len(text)
     assert feats["num_tools"] == 2

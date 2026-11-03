@@ -10,7 +10,6 @@ Usage:
   python scripts/install_git_hooks.py
 """
 
-import os
 import stat
 import sys
 from pathlib import Path
@@ -78,16 +77,26 @@ def install_hooks() -> None:
     pre_commit_path = GIT_HOOKS_DIR / "pre-commit"
     pre_commit_path.write_text(PRE_COMMIT_SCRIPT, encoding="utf-8")
     try:
-        pre_commit_path.chmod(pre_commit_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    except Exception:
+        pre_commit_path.chmod(
+            pre_commit_path.stat().st_mode
+            | stat.S_IXUSR
+            | stat.S_IXGRP
+            | stat.S_IXOTH
+        )
+    except OSError:
         pass
 
     # 2. pre-push hook
     pre_push_path = GIT_HOOKS_DIR / "pre-push"
     pre_push_path.write_text(PRE_PUSH_SCRIPT, encoding="utf-8")
     try:
-        pre_push_path.chmod(pre_push_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    except Exception:
+        pre_push_path.chmod(
+            pre_push_path.stat().st_mode
+            | stat.S_IXUSR
+            | stat.S_IXGRP
+            | stat.S_IXOTH
+        )
+    except OSError:
         pass
 
     print("=================================================================")

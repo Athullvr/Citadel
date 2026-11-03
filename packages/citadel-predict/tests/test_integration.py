@@ -1,7 +1,13 @@
-import os
 import sys
 from pathlib import Path
+
 import pytest
+from citadel_predict.client import CitadelClient
+from citadel_predict.errors import (
+    CitadelAuthError,
+    CitadelBadRequestError,
+    CitadelValidationError,
+)
 from starlette.testclient import TestClient
 
 # Ensure backend can be imported for integration testing
@@ -13,10 +19,6 @@ try:
     from main import app
 except ImportError:
     app = None
-
-from citadel_predict.client import CitadelClient
-from citadel_predict.errors import CitadelAuthError, CitadelBadRequestError, CitadelValidationError
-
 
 @pytest.mark.skipif(app is None, reason="FastAPI backend app not importable")
 def test_integration_live_backend_happy_path():

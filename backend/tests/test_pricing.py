@@ -2,15 +2,13 @@
 Unit tests for the Citadel Predict pricing registry and dollar-cost calculation engine.
 """
 
+from predict import predict
 from pricing import (
-    DEFAULT_INPUT_RATIO,
-    PRICING_REGISTRY,
     ModelPricing,
     calculate_token_cost_range,
     calculate_token_cost_usd,
     get_pricing,
 )
-from predict import predict
 
 
 def test_pricing_registry_claude_sonnet():

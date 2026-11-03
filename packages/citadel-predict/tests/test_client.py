@@ -1,10 +1,8 @@
 import json
 from unittest.mock import patch
+
 import httpx
-import pytest
-
 from citadel_predict.client import CitadelClient, predict_cost
-
 
 MOCK_PREDICT_RESPONSE = {
     "model_id": "claude-sonnet",

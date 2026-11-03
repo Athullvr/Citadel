@@ -8,7 +8,7 @@ Usage:
 import argparse
 import json
 import sys
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from .client import CitadelClient
 from .errors import (
@@ -30,7 +30,7 @@ EXIT_SERVER_ERROR = 5
 EXIT_NETWORK_ERROR = 6
 
 
-def parse_args(args: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="citadel-predict",
         description="Predict AI agent token budgets and costs before execution.",
@@ -104,9 +104,12 @@ def format_pretty_output(result: dict) -> str:
         expected_str = f"{expected_tokens:,} tokens"
 
     if low_cost is not None and high_cost is not None:
-        range_str = f"{low_tokens:,} – {high_tokens:,} tokens (~${low_cost:.2f} – ${high_cost:.2f})"
+        range_str = (
+            f"{low_tokens:,} \u2013 {high_tokens:,} tokens "
+            f"(~${low_cost:.2f} \u2013 ${high_cost:.2f})"
+        )
     else:
-        range_str = f"{low_tokens:,} – {high_tokens:,} tokens"
+        range_str = f"{low_tokens:,} \u2013 {high_tokens:,} tokens"
 
     lines = [
         "=" * 50,
@@ -133,12 +136,15 @@ def format_pretty_output(result: dict) -> str:
     return "\n".join(lines)
 
 
-def main(args: Optional[Sequence[str]] = None) -> int:
+def main(args: Sequence[str] | None = None) -> int:
     parsed = parse_args(args)
 
     task = parsed.task or parsed.positional_task
     if not task:
-        sys.stderr.write("Error: Task description is required. Use --task '...' or pass as argument.\n")
+        sys.stderr.write(
+            "Error: Task description is required. Use --task '...' "
+            "or pass as argument.\n"
+        )
         return EXIT_VALIDATION_ERROR
 
     tools = [t.strip() for t in parsed.tools.split(",") if t.strip()] if parsed.tools else []
@@ -188,7 +194,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         sys.stderr.write(f"Citadel Error: {exc.message}\n")
         return EXIT_GENERAL_ERROR
 
-    except Exception as exc:
+    # Keep a stable CLI exit code and message for unclassified failures.
+    except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"Unexpected Error: {exc}\n")
         return EXIT_GENERAL_ERROR
 

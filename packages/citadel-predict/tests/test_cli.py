@@ -1,10 +1,8 @@
 import json
 from unittest.mock import patch
 
-import pytest
 from citadel_predict.cli import (
     EXIT_AUTH_ERROR,
-    EXIT_GENERAL_ERROR,
     EXIT_NETWORK_ERROR,
     EXIT_RATE_LIMIT_ERROR,
     EXIT_SERVER_ERROR,
@@ -14,7 +12,6 @@ from citadel_predict.cli import (
 )
 from citadel_predict.errors import (
     CitadelAuthError,
-    CitadelBadRequestError,
     CitadelNetworkError,
     CitadelRateLimitError,
     CitadelServerError,
@@ -45,7 +42,7 @@ def test_cli_success_formatted(capsys):
         captured = capsys.readouterr()
         assert "CITADEL PREDICT — TOKEN BUDGET ESTIMATE" in captured.out
         assert "3,000 tokens (~$0.02)" in captured.out
-        assert "1,200 – 5,500 tokens (~$0.01 – $0.03)" in captured.out
+        assert "1,200 \u2013 5,500 tokens (~$0.01 \u2013 $0.03)" in captured.out
         assert "Tool count (2)" in captured.out
 
 

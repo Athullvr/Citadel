@@ -14,6 +14,7 @@ import httpx
 import pytest
 from execution_models import ExecutionRecord
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from postgres.conftest import PostgreSQLWorkers
@@ -127,8 +128,9 @@ def test_workers_recover_after_their_database_connections_are_terminated(
         assert recovered.json()["execution"]["status"] == "started"
 
 
-def test_disposable_postgres_container_restart_preserves_data_and_pool_recovery(
+def test_disposable_postgres_server_restart_preserves_data_and_pool_recovery(
     postgres_workers: PostgreSQLWorkers,
+    postgres_engine,
 ):
     service_id = os.environ.get("CITADEL_TEST_POSTGRES_SERVICE_ID", "").strip()
     if os.environ.get("GITHUB_ACTIONS") != "true" or not service_id:
@@ -145,13 +147,38 @@ def test_disposable_postgres_container_restart_preserves_data_and_pool_recovery(
     )
     config = json.loads(inspected.stdout)
     container_environment = set(config.get("Env", []))
-    expected_container = config.get("Image") == "postgres:16" and (
-        "POSTGRES_DB=citadel_test" in container_environment
+    expected_container = (
+        config.get("Image") == "citadel-postgres-ci"
+        and "POSTGRES_DB=citadel_test" in container_environment
+        and "POSTGRES_USER=citadel_test" in container_environment
+        and config.get("Labels", {}).get("org.opencontainers.image.base.name") == "postgres:16"
     )
     if not expected_container:
         pytest.fail(
             "Refusing to restart a container outside the disposable PostgreSQL test service"
         )
+
+    init_process = subprocess.run(
+        ["docker", "inspect", "--format", "{{.HostConfig.Init}}", service_id],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if init_process.stdout.strip().lower() != "true":
+        pytest.fail("PostgreSQL test service must run with Docker's init process enabled")
+
+    published_ports = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", service_id],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    ).stdout.strip()
+    with postgres_engine.connect() as connection:
+        initial_postmaster_start = connection.execute(
+            text("SELECT pg_postmaster_start_time()")
+        ).scalar_one()
 
     execution = create_execution(postgres_workers)
     execution_id = execution["execution_id"]
@@ -175,7 +202,56 @@ def test_disposable_postgres_container_restart_preserves_data_and_pool_recovery(
     )
     assert recorded.status_code == 200 and recorded.json()["recorded"] is True
 
-    subprocess.run(["docker", "restart", service_id], check=True, timeout=90)
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            "--user",
+            "postgres",
+            service_id,
+            "sh",
+            "-ec",
+            'pg_ctl -D "$PGDATA" -m fast -w stop',
+        ],
+        check=True,
+        timeout=90,
+    )
+
+    # Force new test connections while the service supervisor restarts PostgreSQL.
+    postgres_engine.dispose()
+    readiness_deadline = time.monotonic() + 60
+    restarted_postmaster_start = None
+    while time.monotonic() < readiness_deadline:
+        try:
+            with postgres_engine.connect() as connection:
+                restarted_postmaster_start = connection.execute(
+                    text("SELECT pg_postmaster_start_time()")
+                ).scalar_one()
+            if restarted_postmaster_start > initial_postmaster_start:
+                break
+        except SQLAlchemyError:
+            postgres_engine.dispose()
+        time.sleep(1)
+
+    assert restarted_postmaster_start is not None
+    assert restarted_postmaster_start > initial_postmaster_start
+
+    container_after_restart = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Id}}", service_id],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    ).stdout.strip()
+    assert container_after_restart == service_id
+    ports_after_restart = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", service_id],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    ).stdout.strip()
+    assert ports_after_restart == published_ports
 
     deadline = time.monotonic() + 60
     detail_response: httpx.Response | None = None

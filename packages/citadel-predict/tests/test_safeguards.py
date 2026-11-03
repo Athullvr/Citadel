@@ -5,11 +5,12 @@ Tests for repository safeguards, frozen baseline integrity checks, and CI config
 import sys
 from pathlib import Path
 from unittest.mock import patch
+
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from check_frozen_baseline import FROZEN_FILES, check_staged_baseline
+from check_frozen_baseline import FROZEN_FILES, check_staged_baseline  # noqa: E402
 
 
 def test_frozen_baseline_files_exist_and_listed():
@@ -22,7 +23,10 @@ def test_frozen_baseline_files_exist_and_listed():
 
 def test_safeguard_passes_when_no_frozen_files_staged():
     """Verify safeguard returns True when unrelated files are staged."""
-    with patch("check_frozen_baseline.get_staged_files", return_value=["backend/main.py", "frontend/src/app/page.tsx"]):
+    with patch(
+        "check_frozen_baseline.get_staged_files",
+        return_value=["backend/main.py", "frontend/src/app/page.tsx"],
+    ):
         assert check_staged_baseline() is True
 
 
@@ -51,7 +55,7 @@ def test_safeguard_blocks_when_runs_jsonl_staged(capsys):
 
 
 def test_ci_workflow_yaml_syntax_valid():
-    """Verify that .github/workflows/ci.yml is valid YAML and contains required verification steps."""
+    """Verify the workflow YAML and required verification steps."""
     ci_path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
     assert ci_path.exists()
     content = ci_path.read_text(encoding="utf-8")

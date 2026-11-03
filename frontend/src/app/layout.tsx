@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 import "./globals.css";
+
+type RootLayoutProps = Readonly<{
+  children: ReactNode;
+}>;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,7 +22,7 @@ export const metadata: Metadata = {
   description: "Predict AI agent token cost ranges before execution.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html
       lang="en"

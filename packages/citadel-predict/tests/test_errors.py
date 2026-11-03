@@ -1,11 +1,9 @@
 import httpx
 import pytest
-
-from citadel_predict.client import CitadelClient, predict_cost
+from citadel_predict.client import CitadelClient
 from citadel_predict.errors import (
     CitadelAuthError,
     CitadelBadRequestError,
-    CitadelError,
     CitadelNetworkError,
     CitadelRateLimitError,
     CitadelServerError,

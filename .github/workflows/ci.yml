@@ -48,6 +48,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
+        id: install-dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
@@ -55,14 +56,17 @@ jobs:
           pip install -e packages/citadel-predict-mcp
 
       - name: Run Ruff Lint Check
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
         run: |
           ruff check backend/ data_collection/features.py data_collection/predict.py packages/ scripts/
 
       - name: Run Mypy Type Check
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
         run: |
           mypy backend/main.py data_collection/features.py data_collection/predict.py
 
       - name: Run Full Pytest Suite
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
         run: |
           pytest -v
 
@@ -71,23 +75,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: citadel_test
-          POSTGRES_USER: citadel_test
-          POSTGRES_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        ports:
-          - 5432
-        options: >-
-          --health-cmd "pg_isready -U citadel_test -d citadel_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Build restartable PostgreSQL 16 test image
+        run: docker build -f .github/postgres/Dockerfile -t citadel-postgres-ci .github/postgres
+
+      - name: Start disposable PostgreSQL 16 service
+        id: start-postgres
+        env:
+          POSTGRES_TEST_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --detach --init --name citadel-postgres \
+            --env POSTGRES_DB=citadel_test \
+            --env POSTGRES_USER=citadel_test \
+            --env "POSTGRES_PASSWORD=$POSTGRES_TEST_PASSWORD" \
+            --publish 127.0.0.1::5432 \
+            --health-cmd "pg_isready -U citadel_test -d citadel_test" \
+            --health-interval 5s --health-timeout 5s --health-retries 12 \
+            citadel-postgres-ci
+          container_id=$(docker inspect --format '{{.Id}}' citadel-postgres)
+          host_port=$(docker port "$container_id" 5432/tcp | awk -F: '{print $NF}')
+          echo "service_id=$container_id" >> "$GITHUB_OUTPUT"
+          echo "port=$host_port" >> "$GITHUB_OUTPUT"
+          for attempt in $(seq 1 45); do
+            if docker exec "$container_id" pg_isready -U citadel_test -d citadel_test; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$container_id"
+          exit 1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -100,11 +119,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Run PostgreSQL schema and migration assertions independently
+        run: pytest -v -s backend/tests/postgres/test_schema.py
+        env:
+          CITADEL_TEST_POSTGRES_URL: postgresql+psycopg://citadel_test:${{ secrets.GITHUB_TOKEN }}@127.0.0.1:${{ steps.start-postgres.outputs.port }}/citadel_test
+
       - name: Run isolated PostgreSQL integration tests
         run: pytest -v -s -m postgres backend/tests/postgres
         env:
-          CITADEL_TEST_POSTGRES_URL: postgresql+psycopg://citadel_test:${{ secrets.GITHUB_TOKEN }}@127.0.0.1:${{ job.services.postgres.ports[5432] }}/citadel_test
-          CITADEL_TEST_POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+          CITADEL_TEST_POSTGRES_URL: postgresql+psycopg://citadel_test:${{ secrets.GITHUB_TOKEN }}@127.0.0.1:${{ steps.start-postgres.outputs.port }}/citadel_test
+          CITADEL_TEST_POSTGRES_SERVICE_ID: ${{ steps.start-postgres.outputs.service_id }}
+
+      - name: Stop disposable PostgreSQL service
+        if: always()
+        run: docker rm --force citadel-postgres 2>/dev/null || true
 
   frontend-ci:
     name: Frontend Lint, Type Check & Test
@@ -125,16 +153,24 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        id: install-dependencies
         run: npm ci
 
       - name: Run ESLint
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
         run: npm run lint
 
       - name: Run TypeScript Check
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
         run: npx tsc --noEmit
 
       - name: Run Vitest Unit Tests
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
         run: npm run test
+
+      - name: Build frontend
+        if: ${{ always() && steps.install-dependencies.outcome == 'success' }}
+        run: npm run build
 
   docker-build:
     name: Docker Build Validation
@@ -148,10 +184,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: Build backend Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: backend/Dockerfile
           push: false
           tags: citadel-predict-api:test
+
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: false
+          tags: citadel-predict-frontend:test
+
+      - name: Verify backend image starts without a database migration
+        run: |
+          docker run --rm -d --name citadel-backend-smoke -p 127.0.0.1:8000:8000 citadel-predict-api:test
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/health; then
+              docker stop citadel-backend-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs citadel-backend-smoke
+          exit 1

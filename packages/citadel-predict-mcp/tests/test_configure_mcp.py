@@ -3,22 +3,18 @@ Unit and integration tests for scripts/configure_mcp.py.
 """
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 # Import configure_mcp directly
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
-from configure_mcp import (
+from configure_mcp import (  # noqa: E402
     build_server_config,
     find_mcp_executable,
     get_claude_desktop_config_path,
     run_configuration,
-    update_config_file,
 )
 
 
@@ -52,7 +48,13 @@ def test_platform_desktop_paths():
     assert "Claude" in str(win_path)
 
     mac_path = get_claude_desktop_config_path("Darwin")
-    assert mac_path == Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    assert mac_path == (
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Claude"
+        / "claude_desktop_config.json"
+    )
 
     linux_path = get_claude_desktop_config_path("Linux")
     assert linux_path.name == "claude_desktop_config.json"
@@ -76,7 +78,7 @@ def test_run_configuration_and_valid_json(tmp_path):
     desktop_target = tmp_path / "desktop" / "claude_desktop_config.json"
     code_target = tmp_path / "code" / ".claude" / "settings.json"
 
-    res = run_configuration(
+    run_configuration(
         api_key="cp_live_secret_key",
         api_url="http://localhost:8000",
         desktop_config_path=desktop_target,
@@ -100,8 +102,14 @@ def test_run_configuration_and_valid_json(tmp_path):
     cmd = desktop_data["mcpServers"]["citadel-predict"]["command"]
     assert Path(cmd).exists()
     assert Path(cmd).is_file()
-    assert desktop_data["mcpServers"]["citadel-predict"]["env"]["CITADEL_API_KEY"] == "cp_live_secret_key"
-    assert desktop_data["mcpServers"]["citadel-predict"] == code_data["mcpServers"]["citadel-predict"]
+    assert (
+        desktop_data["mcpServers"]["citadel-predict"]["env"]["CITADEL_API_KEY"]
+        == "cp_live_secret_key"
+    )
+    assert (
+        desktop_data["mcpServers"]["citadel-predict"]
+        == code_data["mcpServers"]["citadel-predict"]
+    )
 
 
 def test_run_configuration_idempotency(tmp_path):
@@ -182,8 +190,14 @@ def test_preserves_existing_unrelated_configs(tmp_path):
 
     # Citadel Predict added/updated
     assert "citadel-predict" in updated_data["mcpServers"]
-    assert updated_data["mcpServers"]["citadel-predict"]["env"]["CITADEL_API_KEY"] == "cp_live_citadel"
-    assert updated_data["mcpServers"]["citadel-predict"]["env"]["CITADEL_API_URL"] == "https://citadel.example.com"
+    assert (
+        updated_data["mcpServers"]["citadel-predict"]["env"]["CITADEL_API_KEY"]
+        == "cp_live_citadel"
+    )
+    assert (
+        updated_data["mcpServers"]["citadel-predict"]["env"]["CITADEL_API_URL"]
+        == "https://citadel.example.com"
+    )
 
 
 def test_configure_mcp_cli_subprocess(tmp_path):

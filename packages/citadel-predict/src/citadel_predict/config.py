@@ -9,7 +9,7 @@ Resolution priority:
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import tomllib
@@ -25,7 +25,7 @@ DEFAULT_API_URL ="https://citadel-7j9u.onrender.com"
 DEFAULT_CONFIG_PATH = Path.home() / ".citadel" / "config.toml"
 
 
-def load_config_file(config_path: Optional[Path] = None) -> dict[str, Any]:
+def load_config_file(config_path: Path | None = None) -> dict[str, Any]:
     """
     Load configuration from ~/.citadel/config.toml if present.
     Supports top-level keys or keys under a [default] section.
@@ -41,7 +41,7 @@ def load_config_file(config_path: Optional[Path] = None) -> dict[str, Any]:
         else:
             # Fallback simple line-by-line parser for key = "value" pairs
             data = {}
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#") or line.startswith("["):
@@ -60,15 +60,15 @@ def load_config_file(config_path: Optional[Path] = None) -> dict[str, Any]:
                     merged[k] = v
             return merged
         return data
-    except Exception:
+    except (OSError, ValueError):
         # If config file is corrupted or unreadable, ignore silently and return empty dict
         return {}
 
 
 def resolve_api_key(
-    explicit_key: Optional[str] = None,
-    config_path: Optional[Path] = None,
-) -> Optional[str]:
+    explicit_key: str | None = None,
+    config_path: Path | None = None,
+) -> str | None:
     """
     Resolve API key according to priority:
     1. Explicit argument
@@ -91,8 +91,8 @@ def resolve_api_key(
 
 
 def resolve_api_url(
-    explicit_url: Optional[str] = None,
-    config_path: Optional[Path] = None,
+    explicit_url: str | None = None,
+    config_path: Path | None = None,
 ) -> str:
     """
     Resolve base API URL according to priority:

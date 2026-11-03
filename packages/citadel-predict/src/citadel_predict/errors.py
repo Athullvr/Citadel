@@ -2,7 +2,7 @@
 Exception hierarchy for citadel-predict.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 
 class CitadelError(Exception):
@@ -11,8 +11,8 @@ class CitadelError(Exception):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
-        response_data: Optional[Any] = None,
+        status_code: int | None = None,
+        response_data: Any | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -36,7 +36,7 @@ class CitadelAuthError(CitadelError):
             "or configure api_key in ~/.citadel/config.toml"
         ),
         status_code: int = 401,
-        response_data: Optional[Any] = None,
+        response_data: Any | None = None,
     ) -> None:
         super().__init__(message, status_code=status_code, response_data=response_data)
 
@@ -48,8 +48,8 @@ class CitadelRateLimitError(CitadelError):
         self,
         message: str = "Rate limit exceeded. Please back off and retry later.",
         status_code: int = 429,
-        response_data: Optional[Any] = None,
-        retry_after: Optional[int] = None,
+        response_data: Any | None = None,
+        retry_after: int | None = None,
     ) -> None:
         super().__init__(message, status_code=status_code, response_data=response_data)
         self.retry_after = retry_after
@@ -68,7 +68,7 @@ class CitadelValidationError(CitadelError):
         self,
         message: str = "Request validation failed. Check task_text and tools formatting.",
         status_code: int = 422,
-        response_data: Optional[Any] = None,
+        response_data: Any | None = None,
     ) -> None:
         super().__init__(message, status_code=status_code, response_data=response_data)
 
@@ -80,7 +80,7 @@ class CitadelBadRequestError(CitadelError):
         self,
         message: str = "Bad request. Unsupported model or invalid payload.",
         status_code: int = 400,
-        response_data: Optional[Any] = None,
+        response_data: Any | None = None,
     ) -> None:
         super().__init__(message, status_code=status_code, response_data=response_data)
 
@@ -92,7 +92,7 @@ class CitadelServerError(CitadelError):
         self,
         message: str = "Citadel Predict server error. Please try again later.",
         status_code: int = 500,
-        response_data: Optional[Any] = None,
+        response_data: Any | None = None,
     ) -> None:
         super().__init__(message, status_code=status_code, response_data=response_data)
 
@@ -103,7 +103,7 @@ class CitadelNetworkError(CitadelError):
     def __init__(
         self,
         message: str = "Network error: Failed to connect to Citadel Predict API.",
-        cause: Optional[Exception] = None,
+        cause: Exception | None = None,
     ) -> None:
         super().__init__(message)
         self.cause = cause

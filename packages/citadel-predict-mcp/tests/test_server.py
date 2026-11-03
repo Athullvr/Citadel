@@ -4,7 +4,7 @@ Unit tests for the Citadel Predict MCP server.
 
 import asyncio
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from citadel_predict.errors import (
@@ -16,7 +16,6 @@ from citadel_predict.errors import (
     CitadelServerError,
     CitadelValidationError,
 )
-
 from citadel_predict_mcp.server import create_server, main
 
 
@@ -55,7 +54,10 @@ def test_estimate_agent_cost_success(mcp_server):
             "driving_factors": ["task_complexity", "tools_count"],
         }
 
-        with patch("citadel_predict_mcp.server.predict_cost", return_value=mock_prediction) as mock_predict:
+        with patch(
+            "citadel_predict_mcp.server.predict_cost",
+            return_value=mock_prediction,
+        ) as mock_predict:
             result = await mcp_server.call_tool(
                 "estimate_agent_cost",
                 {
@@ -79,7 +81,7 @@ def test_estimate_agent_cost_success(mcp_server):
             assert data["high_cost_usd"] == 0.0348
             assert data["out_of_distribution"] is False
             assert "Expected: 3,200 tokens (~$0.02)" in data["summary"]
-            assert "(Range: 1,500 – 5,800 tokens (~$0.01 – $0.03))" in data["summary"]
+            assert "(Range: 1,500 \u2013 5,800 tokens (~$0.01 \u2013 $0.03))" in data["summary"]
 
             mock_predict.assert_called_once_with(
                 task_text="Audit repository and draft report",
@@ -237,7 +239,10 @@ def test_unexpected_exception_handling(mcp_server):
 
 
 def test_main_entrypoint():
-    with patch("sys.argv", ["citadel-predict-mcp"]), patch("citadel_predict_mcp.server.server.run") as mock_run:
+    with (
+        patch("sys.argv", ["citadel-predict-mcp"]),
+        patch("citadel_predict_mcp.server.server.run") as mock_run,
+    ):
         main()
         mock_run.assert_called_once_with(transport="stdio")
 

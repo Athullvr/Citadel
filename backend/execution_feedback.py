@@ -226,7 +226,7 @@ def _prediction_assumptions(model_alias: str) -> tuple[str | None, dict[str, Any
     return pricing_version, assumptions
 
 
-def _http_responses(*codes: int) -> dict[int, dict[str, str]]:
+def _http_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
     descriptions = {
         400: "Invalid model or request.",
         401: "Authentication is required or invalid.",

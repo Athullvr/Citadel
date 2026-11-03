@@ -41,7 +41,10 @@ def check_staged_baseline() -> bool:
         print("\n" + "=" * 78, file=sys.stderr)
         print(" [BLOCKED] CRITICAL INVARIANT VIOLATION (CLAUDE.md Invariant #1)", file=sys.stderr)
         print("=" * 78, file=sys.stderr)
-        print("Attempted to stage/commit modifications to frozen baseline artifacts:\n", file=sys.stderr)
+        print(
+            "Attempted to stage/commit modifications to frozen baseline artifacts:\n",
+            file=sys.stderr,
+        )
         for v in violations:
             print(f"  [X] {v}", file=sys.stderr)
         print(

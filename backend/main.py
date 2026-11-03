@@ -16,10 +16,9 @@ import logging
 import os
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-
-from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.encoders import jsonable_encoder
@@ -30,6 +29,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+
 
 # Configure JSON logger
 class JsonFormatter(logging.Formatter):
@@ -79,17 +79,17 @@ if str(DATA_COLLECTION_DIR) not in sys.path:
 
 from api_schemas import PredictRequest, PredictResponse  # noqa: E402
 from execution_feedback import router as execution_feedback_router  # noqa: E402
-from predict import (
+from predict import (  # noqa: E402
     DEFAULT_MODEL,
     SUPPORTED_MODELS,
     get_bundle_path,
     load_bundle,
 )
-from predict import (
+from predict import (  # noqa: E402
     predict as run_predict,
 )
 from request_limits import ExecutionRequestBodyLimitMiddleware  # noqa: E402
-from tools import TOOL_SCHEMAS
+from tools import TOOL_SCHEMAS  # noqa: E402
 
 # Rate Limiter setup
 limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
@@ -103,8 +103,12 @@ async def lifespan(app: FastAPI):
         load_bundle(DEFAULT_MODEL)
         logger.info(f"Calibration bundle loaded successfully from {bundle_path}")
     except Exception as exc:
-        logger.critical(f"FATAL: Failed to load calibration bundle for '{DEFAULT_MODEL}' on startup: {exc}")
-        raise RuntimeError(f"Startup check failed: Calibration bundle not found or invalid: {exc}") from exc
+        logger.critical(
+            f"FATAL: Failed to load calibration bundle for '{DEFAULT_MODEL}' on startup: {exc}"
+        )
+        raise RuntimeError(
+            f"Startup check failed: Calibration bundle not found or invalid: {exc}"
+        ) from exc
     yield
 
 
@@ -144,7 +148,9 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     errors = jsonable_encoder(exc.errors())
     msg = "; ".join(
         f"{'.'.join(str(loc) for loc in err.get('loc', []))}: {err.get('msg', '')}"
@@ -172,13 +178,18 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
         "X-RateLimit-Limit": "30",
         "X-RateLimit-Remaining": "0",
     }
-    return JSONResponse(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content=body, headers=headers)
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content=body,
+        headers=headers,
+    )
 
 
 # CORS configuration
 # Configure ALLOWED_ORIGINS as a comma-separated list of allowed origins in Render Dashboard.
 # Example: ALLOWED_ORIGINS="https://citadel-predict.vercel.app,http://localhost:3000"
-# Defaults to "http://localhost:3000" (restrictive default for security; avoid wildcard "*" in production).
+# Defaults to "http://localhost:3000" (restrictive default for security;
+# avoid wildcard "*" in production).
 raw_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
 allowed_origins = [o.strip() for o in raw_allowed_origins.split(",") if o.strip()]
 
@@ -199,7 +210,11 @@ security_scheme = HTTPBearer(auto_error=False)
 
 def is_auth_enabled() -> bool:
     """Check if authentication is active (via CITADEL_REQUIRE_AUTH or configured API key)."""
-    require_auth = os.environ.get("CITADEL_REQUIRE_AUTH", "").strip().lower() in ("true", "1", "yes")
+    require_auth = os.environ.get("CITADEL_REQUIRE_AUTH", "").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
     has_key = bool(os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY"))
     return require_auth or has_key
 
@@ -209,7 +224,11 @@ def verify_api_key(
 ) -> str | None:
     """Verify Bearer token against configured CITADEL_API_KEY / API_KEY."""
     expected_key = os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")
-    require_auth = os.environ.get("CITADEL_REQUIRE_AUTH", "").strip().lower() in ("true", "1", "yes")
+    require_auth = os.environ.get("CITADEL_REQUIRE_AUTH", "").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
     if not expected_key and not require_auth:
         # Auth not configured -> open access (dev/demo mode)
@@ -225,7 +244,10 @@ def verify_api_key(
     if not expected_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server has CITADEL_REQUIRE_AUTH=true but no CITADEL_API_KEY is configured in the environment.",
+            detail=(
+                "Server has CITADEL_REQUIRE_AUTH=true but no CITADEL_API_KEY is "
+                "configured in the environment."
+            ),
         )
 
     if credentials.credentials.strip() != expected_key.strip():
@@ -330,7 +352,7 @@ def predict(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
-        )
+        ) from e
 
 
 @app.get("/api/validation-examples")
