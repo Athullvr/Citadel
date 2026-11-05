@@ -50,6 +50,15 @@ class UTCDateTime(TypeDecorator[datetime]):
 
 SnapshotJSON = JSON().with_variant(JSONB(), "postgresql")
 
+TELEMETRY_PROVENANCE_VERIFIED_PROVIDER = "verified_provider"
+TELEMETRY_PROVENANCE_UNVERIFIED_SUBMITTED = "unverified_submitted"
+TELEMETRY_PROVENANCE_SYNTHETIC_BENCHMARK = "synthetic_benchmark"
+TELEMETRY_PROVENANCE_VALUES = (
+    TELEMETRY_PROVENANCE_VERIFIED_PROVIDER,
+    TELEMETRY_PROVENANCE_UNVERIFIED_SUBMITTED,
+    TELEMETRY_PROVENANCE_SYNTHETIC_BENCHMARK,
+)
+
 
 class PredictionRecord(Base):
     __tablename__ = "execution_predictions"
@@ -94,6 +103,15 @@ class ExecutionRecord(Base):
         ),
         UniqueConstraint("execution_id", "workspace_id", name="uq_execution_workspace"),
         CheckConstraint("status IN ('started', 'completed', 'failed')", name="ck_execution_status"),
+        CheckConstraint(
+            "expected_usage_event_count IS NULL OR expected_usage_event_count >= 0",
+            name="ck_execution_expected_usage_event_count_nonnegative",
+        ),
+        CheckConstraint(
+            "telemetry_provenance IS NULL OR telemetry_provenance IN "
+            "('verified_provider', 'unverified_submitted', 'synthetic_benchmark')",
+            name="ck_execution_telemetry_provenance",
+        ),
         Index("ix_execution_records_workspace_started", "workspace_id", "started_at"),
     )
 
@@ -108,6 +126,8 @@ class ExecutionRecord(Base):
     external_run_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     parent_execution_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     is_synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    expected_usage_event_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telemetry_provenance: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

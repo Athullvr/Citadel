@@ -107,7 +107,11 @@ def run_task(client: anthropic.Anthropic, task: dict, telemetry: Any | None = No
     except Exception:
         if telemetry_execution is not None:
             try:
-                telemetry.complete_execution(telemetry_execution, succeeded=False)
+                telemetry.complete_execution(
+                    telemetry_execution,
+                    succeeded=False,
+                    expected_usage_event_count=len(turns),
+                )
             except Exception:  # noqa: BLE001 - completion reporting is best-effort
                 logger.warning("Could not report execution failure to Citadel telemetry.")
         raise
@@ -164,7 +168,11 @@ def run_task(client: anthropic.Anthropic, task: dict, telemetry: Any | None = No
     }
     if telemetry_execution is not None:
         try:
-            telemetry.complete_execution(telemetry_execution, succeeded=not hit_max_turns)
+            telemetry.complete_execution(
+                telemetry_execution,
+                succeeded=not hit_max_turns,
+                expected_usage_event_count=len(turns),
+            )
         except Exception:  # noqa: BLE001 - completion reporting is best-effort
             logger.warning(
                 "Could not complete Citadel telemetry; the agent run result is unchanged."

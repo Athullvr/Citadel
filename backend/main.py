@@ -78,6 +78,7 @@ if str(DATA_COLLECTION_DIR) not in sys.path:
     sys.path.insert(0, str(DATA_COLLECTION_DIR))
 
 from api_schemas import PredictRequest, PredictResponse  # noqa: E402
+from evaluation_api import router as evaluation_router  # noqa: E402
 from execution_feedback import router as execution_feedback_router  # noqa: E402
 from predict import (  # noqa: E402
     DEFAULT_MODEL,
@@ -202,6 +203,7 @@ app.add_middleware(
 )
 app.add_middleware(ExecutionRequestBodyLimitMiddleware)
 app.include_router(execution_feedback_router)
+app.include_router(evaluation_router)
 
 # API Key Authentication Setup
 API_KEY_ENV = os.environ.get("CITADEL_API_KEY") or os.environ.get("API_KEY")

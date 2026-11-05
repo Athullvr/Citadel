@@ -111,14 +111,22 @@ class CitadelTelemetry:
                     time.sleep(0.2 * (2**attempt))
         logger.warning("Could not report one Anthropic usage event; the agent run will continue.")
 
-    def complete_execution(self, execution: TelemetryExecution, succeeded: bool) -> None:
+    def complete_execution(
+        self,
+        execution: TelemetryExecution,
+        succeeded: bool,
+        expected_usage_event_count: int | None = None,
+    ) -> None:
         try:
+            payload: dict[str, Any] = {
+                "status": "completed" if succeeded else "failed",
+                "completed_at": datetime.now(UTC).isoformat(),
+            }
+            if expected_usage_event_count is not None:
+                payload["expected_usage_event_count"] = expected_usage_event_count
             self._post(
                 f"/api/executions/{execution.execution_id}/complete",
-                {
-                    "status": "completed" if succeeded else "failed",
-                    "completed_at": datetime.now(UTC).isoformat(),
-                },
+                payload,
             )
         except (httpx.HTTPError, ValueError):
             logger.warning(

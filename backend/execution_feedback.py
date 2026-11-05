@@ -14,7 +14,14 @@ from uuid import UUID, uuid4
 
 from api_schemas import PredictResponse
 from database import get_db
-from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_now
+from execution_models import (
+    TELEMETRY_PROVENANCE_SYNTHETIC_BENCHMARK,
+    TELEMETRY_PROVENANCE_UNVERIFIED_SUBMITTED,
+    ExecutionRecord,
+    PredictionRecord,
+    UsageEvent,
+    utc_now,
+)
 from fastapi import APIRouter, Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from features import FEATURE_NAMES
@@ -122,6 +129,9 @@ class CreateUsageEventRequest(StrictRequest):
 class CompleteExecutionRequest(StrictRequest):
     status: Literal["completed", "failed"]
     completed_at: datetime | None = None
+    expected_usage_event_count: int | None = Field(
+        default=None, strict=True, ge=0, le=_MAX_BIGINT
+    )
 
     @field_validator("completed_at")
     @classmethod
@@ -325,6 +335,11 @@ def create_execution(
         external_run_id=payload.external_run_id,
         parent_execution_id=payload.parent_execution_id,
         is_synthetic=payload.is_synthetic,
+        telemetry_provenance=(
+            TELEMETRY_PROVENANCE_SYNTHETIC_BENCHMARK
+            if payload.is_synthetic
+            else TELEMETRY_PROVENANCE_UNVERIFIED_SUBMITTED
+        ),
         started_at=utc_now(),
     )
     with db.begin():
@@ -571,6 +586,7 @@ def complete_execution(
             )
         execution.status = payload.status
         execution.completed_at = completed_at
+        execution.expected_usage_event_count = payload.expected_usage_event_count
         db.flush()
     return _execution_detail(db, execution)
 
