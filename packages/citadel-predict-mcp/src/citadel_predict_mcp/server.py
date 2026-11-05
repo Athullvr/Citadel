@@ -53,7 +53,7 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
                 "created_at",
             )
         }
-    return {
+    result = {
         "success": True,
         "execution_id": execution.get("execution_id"),
         "status": execution.get("status"),
@@ -83,6 +83,14 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
             )
         },
     }
+    adaptive_prediction = data.get("adaptive_prediction")
+    if isinstance(adaptive_prediction, dict):
+        result["adaptive_prediction"] = {
+            "original_prediction": adaptive_prediction.get("original_prediction"),
+            "adjusted_prediction": adaptive_prediction.get("adjusted_prediction"),
+            "profile": adaptive_prediction.get("profile"),
+        }
+    return result
 
 
 def _execution_error(operation: str, exc: Exception) -> dict[str, Any]:
@@ -286,7 +294,8 @@ def create_server() -> MCPServer:
         name="begin_execution",
         description=(
             "Create or attach a prediction and register an Anthropic execution before it runs. "
-            "Returns an execution ID for usage recording and completion."
+            "Optionally apply an eligible workspace execution profile when creating a new "
+            "prediction. Returns an execution ID for usage recording and completion."
         ),
     )
     def begin_execution(
@@ -298,6 +307,7 @@ def create_server() -> MCPServer:
         provider: str = "anthropic",
         integration_name: str = "citadel-predict-mcp",
         integration_version: str | None = None,
+        use_adaptive_profile: bool = False,
     ) -> dict[str, Any]:
         """Create a prediction if needed and register the execution."""
         try:
@@ -321,6 +331,7 @@ def create_server() -> MCPServer:
                     integration_version=integration_version,
                     provider=provider,
                     exact_provider_model=exact_provider_model,
+                    use_adaptive_profile=use_adaptive_profile,
                 )
             return _safe_execution_summary(detail)
         except (CitadelError, ValueError, KeyError) as exc:

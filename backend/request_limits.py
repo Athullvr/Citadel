@@ -1,16 +1,16 @@
 """Small ASGI request-size guard for execution-feedback JSON bodies."""
 
 import json
-from typing import Any
 
 from execution_feedback import MAX_EXECUTION_BODY_BYTES
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 
 class ExecutionRequestBodyLimitMiddleware:
-    def __init__(self, app: Any) -> None:
+    def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope: dict[str, Any], receive, send) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
         if (
             scope.get("type") != "http"
@@ -30,7 +30,7 @@ class ExecutionRequestBodyLimitMiddleware:
             except ValueError:
                 pass
 
-        messages: list[dict[str, Any]] = []
+        messages: list[Message] = []
         body_size = 0
         while True:
             message = await receive()
@@ -47,7 +47,7 @@ class ExecutionRequestBodyLimitMiddleware:
 
         message_index = 0
 
-        async def replay_receive() -> dict[str, Any]:
+        async def replay_receive() -> Message:
             nonlocal message_index
             if message_index < len(messages):
                 message = messages[message_index]
@@ -58,7 +58,7 @@ class ExecutionRequestBodyLimitMiddleware:
         await self.app(scope, replay_receive, send)
 
     @staticmethod
-    async def _send_too_large(scope: dict[str, Any], receive, send) -> None:
+    async def _send_too_large(scope: Scope, receive: Receive, send: Send) -> None:
         body = json.dumps(
             {
                 "error": "payload_too_large",

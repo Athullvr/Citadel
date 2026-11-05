@@ -253,6 +253,58 @@ def _http_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
     return {code: {"description": descriptions[code]} for code in codes}
 
 
+def persist_prediction_snapshot(
+    payload: CreatePredictionRequest,
+    result: dict[str, Any],
+    *,
+    workspace_id: str,
+    db: Session,
+    profile_adjustment: dict[str, Any] | None = None,
+    adjusted_prediction: dict[str, int] | None = None,
+) -> StoredPredictionResponse:
+    """Persist the unchanged model output and optional immutable profile metadata."""
+    response = PredictResponse.model_validate(result)
+    created_at = utc_now()
+    prediction_id = uuid4()
+    pricing_version, pricing_assumptions = _prediction_assumptions(payload.model_id)
+    artifact_version = _artifact_digest(payload.model_id)
+    snapshot: dict[str, Any] = {
+        "response": response.model_dump(mode="json"),
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_names": FEATURE_NAMES,
+        "model_artifact_version": artifact_version,
+        "pricing_assumptions": pricing_assumptions,
+        "input_retention": "task_text_not_stored",
+    }
+    if profile_adjustment is not None:
+        snapshot["profile_adjustment"] = profile_adjustment
+        if adjusted_prediction is not None:
+            snapshot["adjusted_prediction"] = adjusted_prediction
+    record = PredictionRecord(
+        prediction_id=prediction_id,
+        workspace_id=workspace_id,
+        created_at=created_at,
+        model_alias=payload.model_id,
+        model_artifact_version=artifact_version,
+        feature_schema_version=FEATURE_SCHEMA_VERSION,
+        predicted_low_tokens=response.low_tokens,
+        predicted_expected_tokens=response.expected_tokens,
+        predicted_high_tokens=response.high_tokens,
+        estimated_low_cost=response.low_cost_usd,
+        estimated_expected_cost=response.expected_cost_usd,
+        estimated_high_cost=response.high_cost_usd,
+        pricing_version=pricing_version,
+        prediction_payload_snapshot=snapshot,
+        task_hash=_task_hash(payload.task_text),
+    )
+    with db.begin():
+        db.add(record)
+        db.flush()
+    return StoredPredictionResponse(
+        **response.model_dump(), prediction_id=prediction_id, created_at=created_at
+    )
+
+
 @router.post(
     "/predictions",
     response_model=StoredPredictionResponse,
@@ -276,40 +328,11 @@ def create_prediction_record(
         )
 
     result = run_predict(payload.task_text, payload.tools, model_id=payload.model_id)
-    response = PredictResponse.model_validate(result)
-    created_at = utc_now()
-    prediction_id = uuid4()
-    pricing_version, pricing_assumptions = _prediction_assumptions(payload.model_id)
-    snapshot = {
-        "response": response.model_dump(mode="json"),
-        "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "feature_names": FEATURE_NAMES,
-        "model_artifact_version": _artifact_digest(payload.model_id),
-        "pricing_assumptions": pricing_assumptions,
-        "input_retention": "task_text_not_stored",
-    }
-    record = PredictionRecord(
-        prediction_id=prediction_id,
+    return persist_prediction_snapshot(
+        payload,
+        result,
         workspace_id=workspace_id,
-        created_at=created_at,
-        model_alias=payload.model_id,
-        model_artifact_version=snapshot["model_artifact_version"],
-        feature_schema_version=FEATURE_SCHEMA_VERSION,
-        predicted_low_tokens=response.low_tokens,
-        predicted_expected_tokens=response.expected_tokens,
-        predicted_high_tokens=response.high_tokens,
-        estimated_low_cost=response.low_cost_usd,
-        estimated_expected_cost=response.expected_cost_usd,
-        estimated_high_cost=response.high_cost_usd,
-        pricing_version=pricing_version,
-        prediction_payload_snapshot=snapshot,
-        task_hash=_task_hash(payload.task_text),
-    )
-    with db.begin():
-        db.add(record)
-        db.flush()
-    return StoredPredictionResponse(
-        **response.model_dump(), prediction_id=prediction_id, created_at=created_at
+        db=db,
     )
 
 

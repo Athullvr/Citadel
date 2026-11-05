@@ -239,3 +239,48 @@ and detail requests return 200. Feedback routes document:
 Normal FastAPI validation errors keep the backend's existing standardized JSON
 error envelope. Legacy prediction behavior and optional legacy authentication
 are unchanged.
+
+## Adaptive execution profiles (0.5.0)
+
+`POST /api/predictions/adaptive` creates a persisted prediction using the same
+estimator, then returns `original_prediction`, `adjusted_prediction`, and a
+safe profile summary. It requires the existing execution Bearer key and uses
+the server-selected workspace. The existing `POST /api/predict` contract is
+unchanged. The stored prediction keeps the model's original token values in its
+immutable columns and response snapshot; the profile result and shifted token
+interval are stored as separate metadata in that same immutable snapshot.
+
+The endpoint accepts `task_text`, `tools`, `model_id`, `provider`, and the exact
+`exact_provider_model`. It never returns the feature snapshot, prompt, task
+hash, or workspace identifier. The total-token adjustment shifts low, expected,
+and high estimates by the same integer amount, preserving interval width and
+order. Dollar cost fields stay at the original estimate because a total-token
+residual cannot be split reliably between input and output tokens.
+
+Profiles use only evaluator-eligible completed executions in the configured
+workspace with `verified_provider` provenance, matching model artifact, the
+Anthropic cache-exclusive input-plus-output target, and an HMAC task hash. Each
+task hash contributes one median residual, so duplicate executions and retries
+cannot multiply the same task's weight. Profiles need at least 30 distinct
+hashed tasks, and the exact 95% distribution-free order-statistic confidence
+interval for the median residual must exclude zero. The median correction is
+bounded by 50% of the current expected estimate, the existing interval width,
+and the non-negative lower-bound constraint. Fractional median residuals round
+to the nearest whole token with half values rounded away from zero. Profiles
+older than 180 days are stale and do not adjust estimates.
+
+The exact provider/model profile is preferred; a compatible workspace profile
+is the fallback. Project identity and task category are not stored, so those
+levels are reported unavailable. The global baseline is the unchanged model
+output; Citadel does not pool residuals across workspaces. Status, sample counts,
+provenance counts, exclusion reasons, confidence interval, and fallback reason
+are included in the response.
+
+Configure a stable `CITADEL_TASK_HASH_KEY` to allow exact repeated-task
+deduplication. Without it, task independence is unknown and no profile can
+activate. Current API submissions remain `unverified_submitted`; the shared
+Bearer key and caller-provided source do not prove provider authenticity. This
+means profiles safely fall back to the baseline until an execution is recorded
+through a trusted path that establishes `verified_provider`. The median
+confidence interval assumes distinct task hashes represent independent tasks;
+semantically near-identical prompts are not detected.

@@ -262,6 +262,29 @@ class CitadelClient:
             expected_status=(201,),
         )
 
+    def create_adaptive_prediction(
+        self,
+        task_text: str,
+        *,
+        provider: str,
+        exact_provider_model: str,
+        tools: list[str] | None = None,
+        model_id: str = "claude-sonnet",
+    ) -> dict[str, Any]:
+        """Persist a base prediction and return its workspace profile adjustment."""
+        return self._execution_request(
+            "POST",
+            "/api/predictions/adaptive",
+            {
+                "task_text": task_text,
+                "tools": list(tools) if tools is not None else [],
+                "model_id": model_id,
+                "provider": provider,
+                "exact_provider_model": exact_provider_model,
+            },
+            expected_status=(201,),
+        )
+
     def create_execution(
         self,
         *,
@@ -296,11 +319,26 @@ class CitadelClient:
         integration_version: str | None = None,
         provider: str = "anthropic",
         exact_provider_model: str,
+        use_adaptive_profile: bool = False,
     ) -> dict[str, Any]:
         """Create or reuse a prediction, start its execution, and return the safe detail record."""
         if (task_text is None) == (prediction_id is None):
             raise ValueError("Provide exactly one of task_text or prediction_id.")
-        if task_text is not None:
+        if use_adaptive_profile and task_text is None:
+            raise ValueError(
+                "Adaptive profiles require task_text so Citadel can create a prediction."
+            )
+        adaptive_prediction: dict[str, Any] | None = None
+        if task_text is not None and use_adaptive_profile:
+            adaptive_prediction = self.create_adaptive_prediction(
+                task_text,
+                tools=tools,
+                model_id=model_id,
+                provider=provider,
+                exact_provider_model=exact_provider_model,
+            )
+            prediction_id = str(adaptive_prediction["prediction_id"])
+        elif task_text is not None:
             prediction = self.create_execution_prediction(task_text, tools, model_id)
             prediction_id = str(prediction["prediction_id"])
         execution = self.create_execution(
@@ -310,7 +348,14 @@ class CitadelClient:
             provider=provider,
             exact_provider_model=exact_provider_model,
         )
-        return self.get_execution_summary(str(execution["execution_id"]))
+        detail = self.get_execution_summary(str(execution["execution_id"]))
+        if adaptive_prediction is not None:
+            detail["adaptive_prediction"] = {
+                "original_prediction": adaptive_prediction.get("original_prediction"),
+                "adjusted_prediction": adaptive_prediction.get("adjusted_prediction"),
+                "profile": adaptive_prediction.get("profile"),
+            }
+        return detail
 
     def record_execution_usage(
         self,

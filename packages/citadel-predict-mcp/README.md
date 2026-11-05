@@ -153,9 +153,17 @@ workspace ID, task hash, prompt, or feature snapshot.
   "provider": "anthropic",
   "exact_provider_model": "claude-sonnet-5-20251001",
   "integration_name": "my-agent",
-  "integration_version": "1.4.0"
+  "integration_version": "1.4.0",
+  "use_adaptive_profile": true
 }
 ```
+
+`use_adaptive_profile` is optional and defaults to `false`. Set it to `true`
+with a new `task_text` to request an eligible workspace profile. The returned
+`adaptive_prediction` includes the unchanged model estimate, the adjusted token
+interval, profile level, sample counts, provenance and fallback reason. When
+history is insufficient or unverified, the original estimate is used. This
+option cannot be combined with an existing `prediction_id`.
 
 ### `record_execution_usage`
 

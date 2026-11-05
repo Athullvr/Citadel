@@ -60,6 +60,8 @@ def test_tool_registration(mcp_server):
         assert {"task_text", "prediction_id"} <= set(
             schemas["begin_execution"]["properties"]
         )
+        assert "use_adaptive_profile" in schemas["begin_execution"]["properties"]
+        assert "use_adaptive_profile" not in schemas["begin_execution"]["required"]
         assert "workspace_id" not in schemas["begin_execution"]["properties"]
         assert {"execution_id", "event_id", "input_tokens", "output_tokens"} <= set(
             schemas["record_execution_usage"]["required"]
@@ -224,6 +226,40 @@ def test_begin_execution_can_use_existing_prediction_reference(mcp_server):
         assert data["prediction"]["prediction_id"] == _FakeExecutionClient.detail[
             "prediction"
         ]["prediction_id"]
+
+    asyncio.run(_test())
+
+
+def test_begin_execution_can_return_safe_adaptive_profile_summary(mcp_server):
+    class AdaptiveExecutionClient(_FakeExecutionClient):
+        def begin_execution(self, **kwargs):
+            assert kwargs["use_adaptive_profile"] is True
+            return {
+                **self.detail,
+                "adaptive_prediction": {
+                    "original_prediction": {"expected_tokens": 100},
+                    "adjusted_prediction": {"expected_tokens": 120},
+                    "profile": {"status": "active", "adjustment_tokens": 20},
+                },
+            }
+
+    async def _test():
+        with patch("citadel_predict_mcp.server.CitadelClient", AdaptiveExecutionClient):
+            result = await _invoke_registered_handler(
+                mcp_server,
+                "begin_execution",
+                {
+                    "task_text": "Review a public release",
+                    "exact_provider_model": "claude-sonnet-5",
+                    "use_adaptive_profile": True,
+                },
+            )
+        data = _tool_json(result)
+        assert data["success"] is True
+        assert data["adaptive_prediction"]["profile"]["status"] == "active"
+        assert data["adaptive_prediction"]["adjusted_prediction"]["expected_tokens"] == 120
+        assert "workspace_id" not in json.dumps(data)
+        assert '"task_hash":' not in json.dumps(data)
 
     asyncio.run(_test())
 

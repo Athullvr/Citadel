@@ -53,7 +53,9 @@ class _EligibleRecord:
     execution_id: UUID
     prediction_id: UUID
     status: str
+    started_at: datetime
     provenance: str
+    is_synthetic: bool
     task_hash: str | None
     model_alias: str
     model_artifact_version: str | None
@@ -63,6 +65,19 @@ class _EligibleRecord:
     integration_version: str | None
     metric_observation: MetricObservation
     usage_summary: AnthropicUsageSummary
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationDataset:
+    """Internal execution-level records and exclusions shared by evaluators."""
+
+    total_execution_count: int
+    missing_usage_event_execution_count: int
+    completeness_counts: dict[str, int]
+    provenance_counts: dict[str, int]
+    exclusion_counts: dict[str, int]
+    completed_records: list[_EligibleRecord]
+    failed_records: list[_EligibleRecord]
 
 
 def _provenance(value: str | None) -> str:
@@ -227,16 +242,19 @@ def _segments(records: list[_EligibleRecord], outcome: str) -> dict[str, list[di
     return result
 
 
-def get_evaluation_summary(
+def load_evaluation_dataset(
     db: Session,
     *,
     workspace_id: str,
     filters: EvaluationFilters | None = None,
-    evaluated_at: datetime | None = None,
-) -> dict[str, Any]:
-    """Build a read-only summary from execution-level SQL aggregates."""
+) -> EvaluationDataset:
+    """Load eligible execution observations using the evaluator's canonical rules.
+
+    Usage is aggregated by workspace and execution before the prediction join.
+    Profile computation consumes this same dataset so it cannot silently use
+    telemetry that the evaluation engine would reject.
+    """
     filters = filters or EvaluationFilters()
-    evaluated_at = evaluated_at or datetime.now(UTC)
     if filters.start_at and filters.start_at.tzinfo is None:
         raise ValueError("start_at must include a timezone")
     if filters.end_at and filters.end_at.tzinfo is None:
@@ -416,7 +434,9 @@ def get_evaluation_summary(
             execution_id=execution.execution_id,
             prediction_id=prediction.prediction_id,
             status=execution.status,
+            started_at=execution.started_at,
             provenance=provenance,
+            is_synthetic=execution.is_synthetic,
             task_hash=prediction.task_hash,
             model_alias=prediction.model_alias,
             model_artifact_version=prediction.model_artifact_version,
@@ -438,6 +458,36 @@ def get_evaluation_summary(
             failed_records.append(record)
         else:
             exclusion_counts["unsupported_execution_status"] += 1
+
+    return EvaluationDataset(
+        total_execution_count=total_executions,
+        missing_usage_event_execution_count=missing_usage_event_execution_count,
+        completeness_counts=dict(completeness_counts),
+        provenance_counts=dict(provenance_counts),
+        exclusion_counts=dict(exclusion_counts),
+        completed_records=completed_records,
+        failed_records=failed_records,
+    )
+
+
+def get_evaluation_summary(
+    db: Session,
+    *,
+    workspace_id: str,
+    filters: EvaluationFilters | None = None,
+    evaluated_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Build a read-only summary from execution-level SQL aggregates."""
+    filters = filters or EvaluationFilters()
+    evaluated_at = evaluated_at or datetime.now(UTC)
+    dataset = load_evaluation_dataset(db, workspace_id=workspace_id, filters=filters)
+    completed_records = dataset.completed_records
+    failed_records = dataset.failed_records
+    total_executions = dataset.total_execution_count
+    completeness_counts = dataset.completeness_counts
+    provenance_counts = dataset.provenance_counts
+    exclusion_counts = dataset.exclusion_counts
+    missing_usage_event_execution_count = dataset.missing_usage_event_execution_count
 
     provenance_reports = [
         _group_report(

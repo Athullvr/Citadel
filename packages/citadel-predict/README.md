@@ -36,6 +36,38 @@ Output:
 Expected: 3,200 tokens (Range: 1,500 – 5,800)
 ```
 
+## Adaptive execution profile (opt-in)
+
+When execution feedback is configured, the SDK can create a prediction with a
+workspace-scoped historical adjustment and then start that execution:
+
+```python
+from citadel_predict import CitadelClient
+
+with CitadelClient() as client:
+    execution = client.begin_execution(
+        task_text="Review the release notes and draft a migration checklist.",
+        tools=["read_release_notes", "draft_checklist"],
+        provider="anthropic",
+        exact_provider_model="claude-sonnet-5-20251001",
+        use_adaptive_profile=True,
+    )
+
+profiled = execution["adaptive_prediction"]
+print(profiled["original_prediction"]["expected_tokens"])
+print(profiled["adjusted_prediction"]["expected_tokens"])
+print(profiled["profile"]["status"], profiled["profile"]["profile_level"])
+```
+
+Adaptive profiles are opt-in and require a new `task_text`; attaching an
+existing prediction reference keeps its saved estimate unchanged. The
+`adjusted_prediction` contains token bounds only. Cost fields remain the
+original predictor's estimates because total-token residuals do not reveal the
+input/output split. If there is not enough verified, recent, task-deduplicated
+history, the SDK returns the original estimate with a profile status and
+fallback reason. Configure the server's `CITADEL_TASK_HASH_KEY` and trusted
+provider telemetry path before expecting profiles to activate.
+
 ---
 
 ## CLI Usage

@@ -205,3 +205,80 @@ def test_begin_execution_orchestrates_existing_prediction_execution_and_summary_
         ("POST", "/api/executions"),
         ("GET", "/api/executions/execution-1"),
     ]
+
+
+def test_create_adaptive_prediction_uses_authenticated_profile_route():
+    requests = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path, request.read()))
+        return httpx.Response(201, json={"prediction_id": "prediction-1", "profile": {}})
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as http_client:
+        client = CitadelClient(base_url="http://citadel.test", http_client=http_client)
+        result = client.create_adaptive_prediction(
+            "Review a release",
+            provider="anthropic",
+            exact_provider_model="claude-sonnet-5-20251001",
+            tools=["read_release"],
+        )
+
+    assert result["prediction_id"] == "prediction-1"
+    method, path, body = requests[0]
+    assert method == "POST"
+    assert path == "/api/predictions/adaptive"
+    assert b'"provider":"anthropic"' in body
+    assert b'"exact_provider_model":"claude-sonnet-5-20251001"' in body
+
+
+def test_begin_execution_can_opt_into_adaptive_profile():
+    requests = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/api/predictions/adaptive":
+            return httpx.Response(
+                201,
+                json={
+                    "prediction_id": "prediction-1",
+                    "original_prediction": {"expected_tokens": 100},
+                    "adjusted_prediction": {"expected_tokens": 120},
+                    "profile": {"status": "active", "adjustment_tokens": 20},
+                },
+            )
+        if request.url.path == "/api/executions":
+            return httpx.Response(201, json={"execution_id": "execution-1"})
+        return httpx.Response(200, json={"execution": {"status": "started"}})
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as http_client:
+        client = CitadelClient(base_url="http://citadel.test", http_client=http_client)
+        detail = client.begin_execution(
+            task_text="Review a release",
+            provider="anthropic",
+            exact_provider_model="claude-sonnet-5-20251001",
+            use_adaptive_profile=True,
+        )
+
+    assert requests == [
+        ("POST", "/api/predictions/adaptive"),
+        ("POST", "/api/executions"),
+        ("GET", "/api/executions/execution-1"),
+    ]
+    assert detail["adaptive_prediction"]["adjusted_prediction"]["expected_tokens"] == 120
+    assert detail["adaptive_prediction"]["profile"]["adjustment_tokens"] == 20
+
+
+def test_adaptive_profile_requires_new_task_text():
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: None)) as http_client:
+        client = CitadelClient(base_url="http://citadel.test", http_client=http_client)
+        try:
+            client.begin_execution(
+                prediction_id="prediction-1",
+                provider="anthropic",
+                exact_provider_model="claude-sonnet-5-20251001",
+                use_adaptive_profile=True,
+            )
+        except ValueError as exc:
+            assert "require task_text" in str(exc)
+        else:
+            raise AssertionError("adaptive profiles require a new task prediction")
