@@ -102,7 +102,10 @@ class ExecutionRecord(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("execution_id", "workspace_id", name="uq_execution_workspace"),
-        CheckConstraint("status IN ('started', 'completed', 'failed')", name="ck_execution_status"),
+        CheckConstraint(
+            "status IN ('started', 'completed', 'failed', 'cancelled')",
+            name="ck_execution_status",
+        ),
         CheckConstraint(
             "expected_usage_event_count IS NULL OR expected_usage_event_count >= 0",
             name="ck_execution_expected_usage_event_count_nonnegative",

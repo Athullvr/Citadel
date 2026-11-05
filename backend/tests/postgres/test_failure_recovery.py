@@ -86,6 +86,47 @@ def test_completion_constraint_failure_rolls_back_status_and_timestamp(
         assert record is not None and record.completed_at is not None
 
 
+def test_cancelled_execution_is_terminal_and_preserves_completeness(
+    postgres_workers: PostgreSQLWorkers,
+):
+    execution = create_execution(postgres_workers)
+    execution_id = execution["execution_id"]
+    cancelled = postgres_workers.request(
+        0,
+        "POST",
+        f"/api/executions/{execution_id}/complete",
+        payload={"status": "cancelled", "expected_usage_event_count": 0},
+    )
+    repeated = postgres_workers.request(
+        1,
+        "POST",
+        f"/api/executions/{execution_id}/complete",
+        payload={"status": "failed"},
+    )
+    late_usage = postgres_workers.request(
+        1,
+        "POST",
+        f"/api/executions/{execution_id}/usage",
+        payload={
+            "event_id": str(uuid4()),
+            "provider": "anthropic",
+            "exact_provider_model": "claude-sonnet-5",
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "source": "postgres_test",
+            "occurred_at": datetime.now(UTC).isoformat(),
+        },
+    )
+
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["execution"]["status"] == "cancelled"
+    assert cancelled.json()["usage_completeness"] == "complete"
+    assert repeated.status_code == 409
+    assert late_usage.status_code == 409
+
+
 def test_workers_recover_after_their_database_connections_are_terminated(
     postgres_workers: PostgreSQLWorkers,
     postgres_engine,

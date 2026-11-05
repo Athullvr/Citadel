@@ -142,6 +142,12 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
         for check in inspector.get_check_constraints(table)
     }
     assert expected_checks <= actual_checks
+    status_check = next(
+        check["sqltext"]
+        for check in inspector.get_check_constraints("execution_records")
+        if check["name"] == "ck_execution_status"
+    )
+    assert "cancelled" in status_check
 
     expected_triggers = {
         ("trg_prediction_immutable", "execution_predictions"),

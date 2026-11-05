@@ -2,6 +2,7 @@
 HTTP client for the Citadel Predict API.
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -203,6 +204,162 @@ class CitadelClient:
             self._handle_error_response(response)
 
         return response.json()
+
+    def _execution_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        expected_status: tuple[int, ...] = (200,),
+    ) -> dict[str, Any]:
+        """Send one authenticated request to the opt-in execution feedback API."""
+        url = f"{self.base_url}{path}"
+        try:
+            response = self._client.request(
+                method,
+                url,
+                json=payload,
+                headers=self._get_headers(),
+            )
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.RequestError) as exc:
+            raise CitadelNetworkError(
+                message=f"Network error communicating with Citadel API at {url}: {exc}",
+                cause=exc,
+            ) from exc
+
+        if response.status_code not in expected_status:
+            self._handle_error_response(response)
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise CitadelServerError(
+                message="Failed to parse JSON response from Citadel execution API",
+                status_code=response.status_code,
+            ) from exc
+        if not isinstance(data, dict):
+            raise CitadelServerError(
+                message="Citadel execution API returned an invalid response",
+                status_code=response.status_code,
+            )
+        return data
+
+    def create_execution_prediction(
+        self,
+        task_text: str,
+        tools: list[str] | None = None,
+        model_id: str = "claude-sonnet",
+    ) -> dict[str, Any]:
+        """Create a persisted prediction snapshot for a forthcoming execution."""
+        return self._execution_request(
+            "POST",
+            "/api/executions/predictions",
+            {
+                "task_text": task_text,
+                "tools": list(tools) if tools is not None else [],
+                "model_id": model_id,
+            },
+            expected_status=(201,),
+        )
+
+    def create_execution(
+        self,
+        *,
+        prediction_id: str | None,
+        integration_name: str,
+        integration_version: str | None,
+        provider: str,
+        exact_provider_model: str,
+    ) -> dict[str, Any]:
+        """Register a new execution under the configured workspace."""
+        return self._execution_request(
+            "POST",
+            "/api/executions",
+            {
+                "prediction_id": prediction_id,
+                "integration_name": integration_name,
+                "integration_version": integration_version,
+                "provider": provider,
+                "exact_provider_model": exact_provider_model,
+            },
+            expected_status=(201,),
+        )
+
+    def begin_execution(
+        self,
+        *,
+        task_text: str | None = None,
+        prediction_id: str | None = None,
+        tools: list[str] | None = None,
+        model_id: str = "claude-sonnet",
+        integration_name: str = "citadel-predict-sdk",
+        integration_version: str | None = None,
+        provider: str = "anthropic",
+        exact_provider_model: str,
+    ) -> dict[str, Any]:
+        """Create or reuse a prediction, start its execution, and return the safe detail record."""
+        if (task_text is None) == (prediction_id is None):
+            raise ValueError("Provide exactly one of task_text or prediction_id.")
+        if task_text is not None:
+            prediction = self.create_execution_prediction(task_text, tools, model_id)
+            prediction_id = str(prediction["prediction_id"])
+        execution = self.create_execution(
+            prediction_id=prediction_id,
+            integration_name=integration_name,
+            integration_version=integration_version,
+            provider=provider,
+            exact_provider_model=exact_provider_model,
+        )
+        return self.get_execution_summary(str(execution["execution_id"]))
+
+    def record_execution_usage(
+        self,
+        execution_id: str,
+        *,
+        event_id: str,
+        provider: str,
+        exact_provider_model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_input_tokens: int | None = None,
+        cache_read_input_tokens: int | None = None,
+        occurred_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Append an idempotent usage event without accepting caller provenance labels."""
+        return self._execution_request(
+            "POST",
+            f"/api/executions/{execution_id}/usage",
+            {
+                "event_id": event_id,
+                "provider": provider,
+                "exact_provider_model": exact_provider_model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_creation_input_tokens": cache_creation_input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "source": "mcp_tool_submission",
+                "occurred_at": occurred_at or datetime.now(UTC).isoformat(),
+            },
+        )
+
+    def complete_execution(
+        self,
+        execution_id: str,
+        *,
+        status: str,
+        expected_usage_event_count: int | None = None,
+    ) -> dict[str, Any]:
+        """Mark a started execution terminal and optionally declare event completeness."""
+        payload: dict[str, Any] = {"status": status}
+        if expected_usage_event_count is not None:
+            payload["expected_usage_event_count"] = expected_usage_event_count
+        return self._execution_request(
+            "POST", f"/api/executions/{execution_id}/complete", payload
+        )
+
+    def get_execution_summary(self, execution_id: str) -> dict[str, Any]:
+        """Read an execution summary from the configured workspace."""
+        return self._execution_request("GET", f"/api/executions/{execution_id}")
 
     def close(self) -> None:
         """Close the underlying HTTP client session."""

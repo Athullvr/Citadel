@@ -210,7 +210,14 @@ def test_multiple_events_are_summed_once_and_provenance_is_unverified(evaluation
         cache_read_input_tokens=6,
     )
     assert submit_usage(evaluation_database, execution["execution_id"], first)["recorded"] is True
-    assert submit_usage(evaluation_database, execution["execution_id"], first)["recorded"] is False
+    retry = usage_request(
+        event_id=event_id,
+        input_tokens=10,
+        output_tokens=5,
+        cache_creation_input_tokens=3,
+        cache_read_input_tokens=4,
+    )
+    assert submit_usage(evaluation_database, execution["execution_id"], retry)["recorded"] is False
     assert submit_usage(evaluation_database, execution["execution_id"], second)["recorded"] is True
     finish_execution(evaluation_database, execution["execution_id"], expected_count=2)
 
@@ -312,6 +319,36 @@ def test_synthetic_and_failed_telemetry_are_separate(evaluation_database):
     assert failed_group["sample_count"] == 1
     assert report["eligible_completed_execution_count"] == 1
     assert report["eligible_failed_execution_count"] == 1
+
+
+def test_cancelled_execution_is_excluded_from_completed_and_failed_metrics(evaluation_database):
+    prediction = insert_prediction(evaluation_database)
+    execution = insert_execution(evaluation_database, prediction.prediction_id)
+    submit_usage(evaluation_database, execution["execution_id"], usage_request())
+    detail = finish_execution(
+        evaluation_database,
+        execution["execution_id"],
+        status="cancelled",
+        expected_count=1,
+    )
+    assert detail.execution.status == "cancelled"
+    assert detail.usage_completeness == "complete"
+    with pytest.raises(HTTPException) as repeated:
+        finish_execution(
+            evaluation_database,
+            execution["execution_id"],
+            status="failed",
+            expected_count=1,
+        )
+    assert repeated.value.status_code == 409
+    with pytest.raises(HTTPException) as late_event:
+        submit_usage(evaluation_database, execution["execution_id"], usage_request())
+    assert late_event.value.status_code == 409
+
+    report = summary(evaluation_database)
+    assert report["eligible_completed_execution_count"] == 0
+    assert report["eligible_failed_execution_count"] == 0
+    assert report["excluded_execution_counts"]["execution_cancelled"] == 1
 
 
 def test_started_and_empty_executions_are_not_scored_as_zero(evaluation_database):

@@ -77,6 +77,71 @@ def _db_session(monkeypatch) -> Session:
     return Session(engine, expire_on_commit=False)
 
 
+def test_cancelled_status_migration_downgrade_and_reupgrade(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'migration-roundtrip.sqlite').as_posix()}"
+    monkeypatch.setenv("CITADEL_DATABASE_URL", database_url)
+    config = Config(str(BACKEND_DIR / "alembic.ini"))
+
+    command.upgrade(config, "0002_evaluation_metadata")
+    engine = create_database_engine(database_url)
+    execution_id = uuid4()
+    with Session(engine) as db:
+        db.add(
+            ExecutionRecord(
+                execution_id=execution_id,
+                workspace_id="migration-test",
+                integration_name="migration-test",
+                provider="anthropic",
+                exact_provider_model="claude-sonnet-5",
+                status="started",
+                started_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+    command.upgrade(config, "head")
+    with Session(engine) as db:
+        assert db.get(ExecutionRecord, execution_id).status == "started"
+    command.downgrade(config, "0002_evaluation_metadata")
+    command.upgrade(config, "head")
+
+    with engine.connect() as connection:
+        status_check = connection.exec_driver_sql(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='execution_records'"
+        ).scalar_one()
+    with Session(engine) as db:
+        assert db.get(ExecutionRecord, execution_id).status == "started"
+    engine.dispose()
+    assert "cancelled" in status_check
+
+
+def test_cancelled_status_migration_refuses_to_erase_cancelled_rows(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'cancelled-downgrade.sqlite').as_posix()}"
+    monkeypatch.setenv("CITADEL_DATABASE_URL", database_url)
+    config = Config(str(BACKEND_DIR / "alembic.ini"))
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    with Session(engine) as db:
+        db.add(
+            ExecutionRecord(
+                execution_id=uuid4(),
+                workspace_id="migration-test",
+                integration_name="migration-test",
+                provider="anthropic",
+                exact_provider_model="claude-sonnet-5",
+                status="cancelled",
+                started_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+
+    with pytest.raises(RuntimeError, match="cancelled executions exist"):
+        command.downgrade(config, "0002_evaluation_metadata")
+    command.upgrade(config, "head")
+    with Session(engine) as db:
+        assert db.scalar(select(ExecutionRecord.status)) == "cancelled"
+    engine.dispose()
+
+
 def test_prediction_snapshot_is_persisted_without_raw_task(execution_client, monkeypatch):
     task_text = "Highly specific private prompt that must not be retained."
     response = execution_client.post(
@@ -173,11 +238,17 @@ def test_usage_ingestion_is_idempotent_and_rejects_conflicts(execution_client):
     ).json()
     event_id = uuid4()
     payload = usage_request(event_id)
+    retry_payload = {
+        **payload,
+        "occurred_at": datetime.now(UTC).isoformat(),
+    }
     first = execution_client.post(
         f"/api/executions/{execution['execution_id']}/usage", json=payload, headers=auth_headers()
     )
     duplicate = execution_client.post(
-        f"/api/executions/{execution['execution_id']}/usage", json=payload, headers=auth_headers()
+        f"/api/executions/{execution['execution_id']}/usage",
+        json=retry_payload,
+        headers=auth_headers(),
     )
     conflicting = execution_client.post(
         f"/api/executions/{execution['execution_id']}/usage",
@@ -278,6 +349,50 @@ def test_execution_completion_is_terminal_and_returns_aggregate(execution_client
     assert result.json()["execution"]["status"] == "completed"
     assert second.status_code == 409
     assert late_usage.status_code == 409
+
+
+def test_cancelled_execution_is_terminal_and_distinct_from_failure(execution_client):
+    execution = execution_client.post(
+        "/api/executions", json=execution_request(), headers=auth_headers()
+    ).json()
+    execution_id = execution["execution_id"]
+
+    cancelled = execution_client.post(
+        f"/api/executions/{execution_id}/complete",
+        json={"status": "cancelled", "expected_usage_event_count": 0},
+        headers=auth_headers(),
+    )
+    repeated = execution_client.post(
+        f"/api/executions/{execution_id}/complete",
+        json={"status": "failed"},
+        headers=auth_headers(),
+    )
+    late_usage = execution_client.post(
+        f"/api/executions/{execution_id}/usage",
+        json=usage_request(),
+        headers=auth_headers(),
+    )
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["execution"]["status"] == "cancelled"
+    assert cancelled.json()["usage_completeness"] == "complete"
+    assert cancelled.json()["execution"]["telemetry_provenance"] == "unverified_submitted"
+    assert repeated.status_code == 409
+    assert late_usage.status_code == 409
+
+
+def test_failed_execution_remains_distinct_from_cancelled(execution_client):
+    execution = execution_client.post(
+        "/api/executions", json=execution_request(), headers=auth_headers()
+    ).json()
+    failed = execution_client.post(
+        f"/api/executions/{execution['execution_id']}/complete",
+        json={"status": "failed"},
+        headers=auth_headers(),
+    )
+
+    assert failed.status_code == 200
+    assert failed.json()["execution"]["status"] == "failed"
 
 
 def test_authentication_fails_closed_for_feedback_endpoints(execution_client, monkeypatch):

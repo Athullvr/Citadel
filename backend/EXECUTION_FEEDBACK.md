@@ -44,7 +44,7 @@ its output, feature values/schema, model artifact SHA-256 when available,
 3. `POST /api/executions/{execution_id}/usage` appends one provider response's
    usage. Supply a stable UUID `event_id` and reuse it unchanged on retries.
 4. `POST /api/executions/{execution_id}/complete` moves a started execution to
-   `completed` or `failed` and returns its current usage aggregate. Callers may
+   `completed`, `failed`, or `cancelled` and returns its current usage aggregate. Callers may
    include `expected_usage_event_count`, the number of unique usage reports they
    expect for this execution. Omission leaves completeness `unknown` for legacy
    compatibility. A count mismatch is `incomplete`; equality is `complete` by
@@ -53,6 +53,10 @@ its output, feature values/schema, model artifact SHA-256 when available,
    count in execution metadata.
 5. `GET /api/executions/{execution_id}` returns metadata, linked prediction
    summary, and usage aggregate.
+
+Terminal states are final: a second completion cannot overwrite the first, and
+new usage events cannot be added afterward. Cancelled executions remain distinct
+from failed executions and are excluded from completed-execution accuracy reports.
 
 The caller must carry `execution_id` from the start response through usage and
 completion requests. A prediction can be associated with multiple execution
@@ -80,8 +84,10 @@ Example usage event:
 
 `input_tokens` and `output_tokens` are required non-negative integers. Cache
 counters are nullable: `null` means the provider response omitted the field;
-zero means it reported a zero. Identical retries return `recorded: false`.
-Reusing an event ID with different values returns 409. New usage cannot be
+zero means it reported a zero. A retry with the same event ID, provider/model,
+source, and counters returns `recorded: false`; the first observation timestamp
+is retained if a client generates a new one during a retry. Reusing an event ID
+with different usage data returns 409. New usage cannot be
 added after terminal completion, but an identical retry of an already stored
 event remains idempotent.
 

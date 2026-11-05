@@ -127,7 +127,7 @@ class CreateUsageEventRequest(StrictRequest):
 
 
 class CompleteExecutionRequest(StrictRequest):
-    status: Literal["completed", "failed"]
+    status: Literal["completed", "failed", "cancelled"]
     completed_at: datetime | None = None
     expected_usage_event_count: int | None = Field(
         default=None, strict=True, ge=0, le=_MAX_BIGINT
@@ -156,6 +156,7 @@ class ExecutionMetadata(BaseModel):
     external_run_id: str | None
     parent_execution_id: UUID | None
     is_synthetic: bool
+    telemetry_provenance: str | None = None
     expected_usage_event_count: int | None
     started_at: datetime
     completed_at: datetime | None
@@ -371,6 +372,8 @@ def create_execution(
 def _event_matches(
     existing: UsageEvent, execution_id: UUID, payload: CreateUsageEventRequest
 ) -> bool:
+    # Event IDs define logical event identity. An omitted client timestamp can
+    # differ on a retry; preserve the first timestamp and compare usage payloads.
     return (
         existing.execution_id == execution_id
         and existing.provider == payload.provider
@@ -380,7 +383,6 @@ def _event_matches(
         and existing.cache_creation_input_tokens == payload.cache_creation_input_tokens
         and existing.cache_read_input_tokens == payload.cache_read_input_tokens
         and existing.source == payload.source
-        and existing.occurred_at == payload.occurred_at
     )
 
 

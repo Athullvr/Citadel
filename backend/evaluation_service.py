@@ -369,6 +369,8 @@ def get_evaluation_summary(
         reason: str | None = None
         if execution.status == "started":
             reason = "execution_started"
+        elif execution.status == "cancelled":
+            reason = "execution_cancelled"
         elif execution.prediction_id is None or prediction is None:
             reason = "prediction_missing"
         elif int(row.execution_count or 0) != 1:

@@ -3,7 +3,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/citadel-predict-mcp.svg)](https://pypi.org/project/citadel-predict-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**Model Context Protocol (MCP) server for Citadel Predict pre-execution AI agent cost estimation.**
+**Model Context Protocol (MCP) server for Citadel prediction and explicit Anthropic execution tracking.**
 
 `citadel-predict-mcp` connects your hosted [Citadel Predict API](https://github.com/Athullvr/Citadel) directly into **Claude Desktop** and **Claude Code** via a local standard I/O (stdio) MCP server.
 
@@ -13,9 +13,10 @@ With this server configured, Claude can natively estimate token usage ranges ($l
 
 ## Features
 
-- ⚡ **Native Claude Tool Calling**: Claude automatically decides when to call `estimate_agent_cost` when planning or dispatching tasks.
+- ⚡ **Native Claude Tool Calling**: Claude can estimate a task and coordinate an explicit execution lifecycle.
 - 🔒 **Zero Network Exposure**: Runs strictly as a local `stdio` subprocess spawned by Claude Desktop / Claude Code.
 - 🎯 **Pre-Execution Guardrails**: Predicts token consumption bounds before multi-step tools or reasoning loops execute.
+- 📊 **Execution Feedback**: Registers runs, records idempotent usage events, and reports completion and telemetry completeness.
 - 🛡️ **User-Friendly Error Handling**: Catches authentication, rate-limiting, and validation issues, presenting clear, actionable suggestions to Claude rather than raw stack traces.
 
 ---
@@ -117,6 +118,102 @@ claude mcp add citadel-predict -- citadel-predict-mcp
   "summary": "Expected: 3,200 tokens (Range: 1,500 – 5,800)"
 }
 ```
+
+---
+
+## Explicit execution lifecycle
+
+The execution tools use Citadel's authenticated execution feedback API and the
+server-selected workspace. They currently accept Anthropic usage semantics.
+Usage submitted through this MCP server is classified as
+`unverified_submitted`; the MCP caller's event data is not authenticated as a
+provider-signed receipt. Citadel never stores the raw task text as execution
+telemetry, although `begin_execution` sends it to the existing prediction API
+to create the prediction snapshot.
+
+Pass Anthropic's raw `input_tokens` and `output_tokens` counters. In the current
+Citadel evaluator, Anthropic `input_tokens` is the cache-exclusive input
+component; cache creation and cache read counters are parallel breakdowns and
+are not subtracted from that value again. Citadel only reports a cache-inclusive
+aggregate when both optional cache counters are present for every event.
+
+### `begin_execution`
+
+Provide exactly one of `task_text` or `prediction_id`, plus the exact provider
+model. With `task_text`, Citadel creates a persisted prediction through the
+existing estimator before registering the execution. The response contains the
+`execution_id` and a safe prediction summary. The tool does not return a
+workspace ID, task hash, prompt, or feature snapshot.
+
+```json
+{
+  "task_text": "Review the release notes and draft a migration checklist.",
+  "tools": ["read_release_notes", "draft_checklist"],
+  "model_id": "claude-sonnet",
+  "provider": "anthropic",
+  "exact_provider_model": "claude-sonnet-5-20251001",
+  "integration_name": "my-agent",
+  "integration_version": "1.4.0"
+}
+```
+
+### `record_execution_usage`
+
+Append one usage report while the execution is started. Use a stable UUID
+`event_id` for each provider response and reuse that same ID on retries. The
+required input and output counters are non-negative integers. Cache counters
+may be `null` when the provider response omitted them; do not substitute zero.
+The `source` field is set internally by the MCP SDK and is not accepted from
+the caller.
+
+```json
+{
+  "execution_id": "<execution_id from begin_execution>",
+  "event_id": "c115e9ac-d80b-4e31-b497-96cc1a85a8b0",
+  "provider": "anthropic",
+  "exact_provider_model": "claude-sonnet-5-20251001",
+  "input_tokens": 1200,
+  "output_tokens": 240,
+  "cache_creation_input_tokens": 300,
+  "cache_read_input_tokens": null
+}
+```
+
+### `complete_execution` and `get_execution_summary`
+
+Complete an execution once with `status` equal to `completed`, `failed`, or
+`cancelled`. If the integration knows how many unique usage events it expected,
+pass that count as `expected_usage_event_count`; equality with stored events is
+reported as `complete`, a mismatch as `incomplete`, and omission as `unknown`.
+Event-count equality describes the caller's declaration and does not prove the
+telemetry is truthful. `get_execution_summary` can be called at any time to
+retrieve status, safe prediction details, recorded aggregate counters, and
+completeness.
+
+```json
+{
+  "execution_id": "<execution_id from begin_execution>",
+  "status": "completed",
+  "expected_usage_event_count": 1
+}
+```
+
+### Full client workflow
+
+1. Call `begin_execution` before starting the agent. Save the returned
+   `execution_id`.
+2. Run the task using the selected provider. For each Anthropic response, call
+   `record_execution_usage` with its counters and a stable unique event ID.
+3. Call `complete_execution` with the terminal result and known event count.
+   Omit the count when completeness is unknown.
+4. Call `get_execution_summary` to read the final status, aggregate, and
+   completeness. The record can then be considered by Citadel's evaluation API
+   when its prediction, telemetry, and evaluation eligibility requirements are
+   met.
+
+The tools record explicit integration feedback. They do not intercept agent
+traffic automatically, and they do not support universal provider token
+semantics.
 
 ---
 

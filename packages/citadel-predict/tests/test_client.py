@@ -113,3 +113,66 @@ def test_client_health():
         health = client.health()
         assert health["status"] == "ok"
         assert "claude-sonnet" in health["supported_models"]
+
+
+def test_execution_feedback_methods_use_existing_authenticated_routes():
+    requests = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8")) if request.content else None
+        requests.append((request.method, request.url.path, payload))
+        if request.url.path.endswith("/predictions"):
+            return httpx.Response(201, json={"prediction_id": "prediction-1"})
+        if request.url.path == "/api/executions":
+            return httpx.Response(201, json={"execution_id": "execution-1"})
+        if request.url.path.endswith("/usage"):
+            return httpx.Response(200, json={"event_id": "event-1", "recorded": True})
+        if request.url.path.endswith("/complete"):
+            return httpx.Response(200, json={"execution": {"status": "cancelled"}})
+        return httpx.Response(200, json={"execution": {"status": "started"}})
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as http_client:
+        client = CitadelClient(
+            api_key="execution-key",
+            base_url="http://citadel.test",
+            http_client=http_client,
+        )
+        client.create_execution_prediction("task text", tools=["search"])
+        client.create_execution(
+            prediction_id="prediction-1",
+            integration_name="mcp-agent",
+            integration_version="1.0",
+            provider="anthropic",
+            exact_provider_model="claude-sonnet-5",
+        )
+        client.record_execution_usage(
+            "execution-1",
+            event_id="event-1",
+            provider="anthropic",
+            exact_provider_model="claude-sonnet-5",
+            input_tokens=10,
+            output_tokens=2,
+            cache_creation_input_tokens=None,
+            cache_read_input_tokens=0,
+            occurred_at="2026-11-05T00:00:00+00:00",
+        )
+        client.complete_execution(
+            "execution-1", status="cancelled", expected_usage_event_count=1
+        )
+        client.get_execution_summary("execution-1")
+
+    assert [item[:2] for item in requests] == [
+        ("POST", "/api/executions/predictions"),
+        ("POST", "/api/executions"),
+        ("POST", "/api/executions/execution-1/usage"),
+        ("POST", "/api/executions/execution-1/complete"),
+        ("GET", "/api/executions/execution-1"),
+    ]
+    usage_body = requests[2][2]
+    assert usage_body["source"] == "mcp_tool_submission"
+    assert usage_body["cache_creation_input_tokens"] is None
+    assert "workspace_id" not in requests[1][2]
+    assert requests[3][2] == {
+        "status": "cancelled",
+        "expected_usage_event_count": 1,
+    }
