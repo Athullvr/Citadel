@@ -34,6 +34,10 @@ the prediction, execution, and usage tables plus append-only database triggers
 for prediction snapshots and usage events. Back up PostgreSQL before applying
 schema changes in a deployed environment.
 
+Migration `0003_cancelled_execution_status` extends the execution status check
+to allow `cancelled`. Its downgrade refuses to run while cancelled rows exist so
+it cannot silently rewrite those outcomes as failures.
+
 ## Lifecycle
 
 1. `POST /api/executions/predictions` calls the existing predictor and stores

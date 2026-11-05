@@ -566,7 +566,7 @@ def _execution_detail(db: Session, execution: ExecutionRecord) -> ExecutionDetai
     "/{execution_id}/complete",
     response_model=ExecutionDetailResponse,
     responses=_http_responses(401, 404, 409, 413, 422, 500, 503),
-    summary="Complete or fail an execution",
+    summary="Complete, fail, or cancel an execution",
 )
 def complete_execution(
     execution_id: UUID,

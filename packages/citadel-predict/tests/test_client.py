@@ -176,3 +176,32 @@ def test_execution_feedback_methods_use_existing_authenticated_routes():
         "status": "cancelled",
         "expected_usage_event_count": 1,
     }
+
+
+def test_begin_execution_orchestrates_existing_prediction_execution_and_summary_routes():
+    requests = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path.endswith("/predictions"):
+            return httpx.Response(201, json={"prediction_id": "prediction-1"})
+        if request.url.path == "/api/executions":
+            return httpx.Response(201, json={"execution_id": "execution-1"})
+        return httpx.Response(200, json={"execution": {"status": "started"}})
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as http_client:
+        client = CitadelClient(base_url="http://citadel.test", http_client=http_client)
+        detail = client.begin_execution(
+            task_text="Review a release",
+            tools=["read_release"],
+            integration_name="mcp-agent",
+            provider="anthropic",
+            exact_provider_model="claude-sonnet-5",
+        )
+
+    assert detail["execution"]["status"] == "started"
+    assert requests == [
+        ("POST", "/api/executions/predictions"),
+        ("POST", "/api/executions"),
+        ("GET", "/api/executions/execution-1"),
+    ]

@@ -198,6 +198,14 @@ completeness.
 }
 ```
 
+Then read the saved record:
+
+```json
+{
+  "execution_id": "<execution_id from begin_execution>"
+}
+```
+
 ### Full client workflow
 
 1. Call `begin_execution` before starting the agent. Save the returned
