@@ -11,8 +11,8 @@ from uuid import UUID
 from evaluation_metrics import (
     AnthropicUsageSummary,
     MetricObservation,
-    normalize_anthropic_aggregate,
     evaluate_metrics,
+    normalize_anthropic_aggregate,
 )
 from execution_models import (
     TELEMETRY_PROVENANCE_SYNTHETIC_BENCHMARK,
@@ -89,12 +89,15 @@ def _completeness(expected_count: int | None, actual_count: int) -> str:
 def _cache_statistics(records: list[_EligibleRecord]) -> dict[str, Any]:
     if not records:
         return {
+            "cache_exclusive_input_tokens": None,
+            "output_tokens": None,
+            "primary_total_tokens": None,
             "cache_creation_input_tokens": None,
             "cache_creation_known_sum": None,
-            "cache_creation_missing_execution_count": 0,
+            "cache_creation_missing_event_count": 0,
             "cache_read_input_tokens": None,
             "cache_read_known_sum": None,
-            "cache_read_missing_execution_count": 0,
+            "cache_read_missing_event_count": 0,
             "cache_inclusive_input_tokens": None,
             "cache_inclusive_total_tokens": None,
         }
@@ -104,13 +107,13 @@ def _cache_statistics(records: list[_EligibleRecord]) -> dict[str, Any]:
     def aggregate(field: str, known_field: str, missing_field: str) -> dict[str, int | None]:
         known_values = [getattr(summary, known_field) for summary in summaries]
         known_present = [value for value in known_values if value is not None]
-        missing_executions = sum(getattr(summary, missing_field) > 0 for summary in summaries)
+        missing_events = sum(getattr(summary, missing_field) for summary in summaries)
         fully_known = all(getattr(summary, missing_field) == 0 for summary in summaries)
         known_sum = sum(known_present) if known_present else None
         return {
             field: known_sum if fully_known and known_sum is not None else None,
             known_field: known_sum,
-            missing_field: missing_executions,
+            missing_field: missing_events,
         }
 
     creation = aggregate(
@@ -129,7 +132,10 @@ def _cache_statistics(records: list[_EligibleRecord]) -> dict[str, Any]:
     output_total = sum(value for value in output_values if value is not None)
     cache_inclusive_input = None
     cache_inclusive_total = None
-    if creation["cache_creation_input_tokens"] is not None and reads["cache_read_input_tokens"] is not None:
+    if (
+        creation["cache_creation_input_tokens"] is not None
+        and reads["cache_read_input_tokens"] is not None
+    ):
         cache_inclusive_input = (
             input_total
             + int(creation["cache_creation_input_tokens"])
@@ -137,6 +143,9 @@ def _cache_statistics(records: list[_EligibleRecord]) -> dict[str, Any]:
         )
         cache_inclusive_total = cache_inclusive_input + output_total
     return {
+        "cache_exclusive_input_tokens": input_total,
+        "output_tokens": output_total,
+        "primary_total_tokens": input_total + output_total,
         **creation,
         **reads,
         "cache_inclusive_input_tokens": cache_inclusive_input,
@@ -195,10 +204,15 @@ def _segments(records: list[_EligibleRecord], outcome: str) -> dict[str, list[di
     for name, fields in dimensions.items():
         groups: dict[tuple[Any, ...], list[_EligibleRecord]] = defaultdict(list)
         for record in records:
-            group_key = (record.provenance,) + tuple(getattr(record, field) for field in fields)
+            group_key = (
+                record.provenance,
+                *(getattr(record, field) for field in fields),
+            )
             groups[group_key].append(record)
         reports: list[dict[str, Any]] = []
-        for group_key, values in sorted(groups.items(), key=lambda item: tuple(str(v) for v in item[0])):
+        for group_key, values in sorted(
+            groups.items(), key=lambda item: tuple(str(value) for value in item[0])
+        ):
             group_provenance = str(group_key[0])
             dimension_values = group_key[1:]
             reports.append(
@@ -243,9 +257,10 @@ def get_evaluation_summary(
                 - func.count(UsageEvent.cache_creation_input_tokens)
             ).label("cache_creation_missing_event_count"),
             func.sum(UsageEvent.cache_read_input_tokens).label("cache_read_known_sum"),
-            (func.count(UsageEvent.event_id) - func.count(UsageEvent.cache_read_input_tokens)).label(
-                "cache_read_missing_event_count"
-            ),
+            (
+                func.count(UsageEvent.event_id)
+                - func.count(UsageEvent.cache_read_input_tokens)
+            ).label("cache_read_missing_event_count"),
             func.count(func.distinct(UsageEvent.provider)).label("usage_provider_count"),
             func.min(UsageEvent.provider).label("usage_provider"),
             func.count(func.distinct(UsageEvent.exact_provider_model)).label(
@@ -336,6 +351,7 @@ def get_evaluation_summary(
     completeness_counts: Counter[str] = Counter()
     provenance_counts: Counter[str] = Counter({category: 0 for category in PROVENANCE_CATEGORIES})
     exclusion_counts: Counter[str] = Counter()
+    missing_usage_event_execution_count = 0
     completed_records: list[_EligibleRecord] = []
     failed_records: list[_EligibleRecord] = []
 
@@ -343,6 +359,8 @@ def get_evaluation_summary(
         execution: ExecutionRecord = row[0]
         prediction: PredictionRecord | None = row[1]
         event_count = int(row.usage_event_count or 0)
+        if event_count == 0:
+            missing_usage_event_execution_count += 1
         provenance = _provenance(execution.telemetry_provenance)
         provenance_counts[provenance] += 1
         completeness = _completeness(execution.expected_usage_event_count, event_count)
@@ -390,6 +408,7 @@ def get_evaluation_summary(
         if usage_summary.primary_total_tokens is None:
             exclusion_counts[usage_summary.unavailable_reason or "invalid_usage_counters"] += 1
             continue
+        assert prediction is not None
 
         record = _EligibleRecord(
             execution_id=execution.execution_id,
@@ -458,6 +477,10 @@ def get_evaluation_summary(
         "total_execution_count": total_executions,
         "eligible_completed_execution_count": len(completed_records),
         "eligible_failed_execution_count": len(failed_records),
+        "excluded_execution_count": total_executions
+        - len(completed_records)
+        - len(failed_records),
+        "missing_usage_event_execution_count": missing_usage_event_execution_count,
         "completeness_distribution": dict(completeness_counts),
         "provenance_distribution": dict(provenance_counts),
         "excluded_execution_counts": dict(exclusion_counts),

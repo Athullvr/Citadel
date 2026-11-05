@@ -85,6 +85,11 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
         "execution_records",
         "usage_events",
     } <= set(inspector.get_table_names())
+    execution_columns = {column["name"] for column in inspector.get_columns("execution_records")}
+    assert {
+        "expected_usage_event_count",
+        "telemetry_provenance",
+    } <= execution_columns
 
     expected_indexes = {
         "ix_execution_predictions_workspace_created",
@@ -128,6 +133,8 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
         "ck_usage_output_nonnegative",
         "ck_usage_cache_creation_nonnegative",
         "ck_usage_cache_read_nonnegative",
+        "ck_execution_expected_usage_event_count_nonnegative",
+        "ck_execution_telemetry_provenance",
     }
     actual_checks = {
         check["name"]
@@ -219,6 +226,12 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
                 started_at=datetime.now(UTC),
             )
         )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+        execution = db.get(ExecutionRecord, execution_id)
+        execution.expected_usage_event_count = -1
         with pytest.raises(IntegrityError):
             db.commit()
         db.rollback()

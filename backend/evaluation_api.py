@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 from database import get_db
 from evaluation_service import EvaluationFilters, get_evaluation_summary
@@ -47,6 +47,8 @@ class EvaluationSummaryResponse(BaseModel):
     total_execution_count: int
     eligible_completed_execution_count: int
     eligible_failed_execution_count: int
+    excluded_execution_count: int
+    missing_usage_event_execution_count: int
     completeness_distribution: dict[str, int]
     provenance_distribution: dict[str, int]
     excluded_execution_counts: dict[str, int]
@@ -82,14 +84,14 @@ def _utc_datetime(value: datetime | None, field: str) -> datetime | None:
 def evaluation_summary(
     _auth: None = Depends(require_execution_auth),
     db: Session = Depends(get_db),  # noqa: B008
-    from_at: datetime | None = Query(default=None, alias="from"),
-    to_at: datetime | None = Query(default=None, alias="to"),
-    model_alias: str | None = Query(default=None, max_length=64),
-    model_artifact_version: str | None = Query(default=None, max_length=128),
-    provider: str | None = Query(default=None, max_length=64),
-    exact_provider_model: str | None = Query(default=None, max_length=128),
-    integration_name: str | None = Query(default=None, max_length=128),
-    integration_version: str | None = Query(default=None, max_length=64),
+    from_at: Annotated[datetime | None, Query(alias="from")] = None,
+    to_at: Annotated[datetime | None, Query(alias="to")] = None,
+    model_alias: Annotated[str | None, Query(max_length=64)] = None,
+    model_artifact_version: Annotated[str | None, Query(max_length=128)] = None,
+    provider: Annotated[str | None, Query(max_length=64)] = None,
+    exact_provider_model: Annotated[str | None, Query(max_length=128)] = None,
+    integration_name: Annotated[str | None, Query(max_length=128)] = None,
+    integration_version: Annotated[str | None, Query(max_length=64)] = None,
 ) -> dict[str, Any]:
     """Calculate metrics from immutable prediction and usage records."""
     start_at = _utc_datetime(from_at, "from")

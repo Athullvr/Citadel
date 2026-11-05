@@ -8,9 +8,10 @@ contract: ``input_tokens`` already excludes cache creation and cache reads.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 from statistics import median
-from typing import Iterable
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,13 +58,13 @@ class AnthropicUsageSummary:
 
     primary_total_tokens: int | None
     cache_exclusive_input_tokens: int | None
-    input_tokens: int | None
-    output_tokens: int | None
-    cache_creation_input_tokens: int | None
-    cache_creation_known_sum: int | None
+    input_tokens: int | Decimal | None
+    output_tokens: int | Decimal | None
+    cache_creation_input_tokens: int | Decimal | None
+    cache_creation_known_sum: int | Decimal | None
     cache_creation_missing_event_count: int
-    cache_read_input_tokens: int | None
-    cache_read_known_sum: int | None
+    cache_read_input_tokens: int | Decimal | None
+    cache_read_known_sum: int | Decimal | None
     cache_read_missing_event_count: int
     cache_inclusive_input_tokens: int | None
     cache_inclusive_total_tokens: int | None
@@ -71,12 +72,12 @@ class AnthropicUsageSummary:
 
 
 def _valid_nonnegative_number(value: int | float | None) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-        and value >= 0
-    )
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
 
 
 def _invalid_pair_reason(observation: MetricObservation) -> str | None:
@@ -87,30 +88,6 @@ def _invalid_pair_reason(observation: MetricObservation) -> str | None:
     if not _valid_nonnegative_number(observation.predicted_expected_tokens):
         return "invalid_prediction"
     return None
-
-
-def _metric_value(
-    values: list[float],
-    exclusions: dict[str, int],
-    *,
-    unavailable_reason: str | None = None,
-) -> MetricValue:
-    sample_count = len(values)
-    if not sample_count:
-        return MetricValue(
-            value=None,
-            sample_count=0,
-            excluded_count=sum(exclusions.values()),
-            exclusion_counts=exclusions,
-            unavailable_reason=unavailable_reason or "no_valid_observations",
-        )
-    return MetricValue(
-        value=None,
-        sample_count=sample_count,
-        excluded_count=sum(exclusions.values()),
-        exclusion_counts=exclusions,
-        unavailable_reason=unavailable_reason,
-    )
 
 
 def _p90_nearest_rank(values: list[float]) -> float:
@@ -137,6 +114,8 @@ def evaluate_metrics(observations: Iterable[MetricObservation]) -> EvaluationMet
         if reason:
             pair_exclusions[reason] = pair_exclusions.get(reason, 0) + 1
             continue
+        assert observation.predicted_expected_tokens is not None
+        assert observation.actual_tokens is not None
         predicted = float(observation.predicted_expected_tokens)
         actual = float(observation.actual_tokens)
         valid.append((predicted, actual, observation))
@@ -144,6 +123,13 @@ def evaluate_metrics(observations: Iterable[MetricObservation]) -> EvaluationMet
     errors = [actual - predicted for predicted, actual, _ in valid]
     absolute_errors = [abs(error) for error in errors]
     metric_count = len(valid)
+    mae: float | None
+    wape: float | None
+    median_absolute: float | None
+    p90_absolute: float | None
+    underprediction_rate: float | None
+    overprediction_rate: float | None
+    signed_bias: float | None
     if metric_count:
         mae = sum(absolute_errors) / metric_count
         actual_sum = sum(actual for _, actual, _ in valid)
@@ -159,49 +145,46 @@ def evaluate_metrics(observations: Iterable[MetricObservation]) -> EvaluationMet
         wape = underprediction_rate = overprediction_rate = signed_bias = None
         wape_reason = "no_valid_observations"
 
+    def point_metric(value: float | None, unavailable_reason: str | None) -> MetricValue:
+        return MetricValue(
+            value=value,
+            sample_count=metric_count,
+            excluded_count=sum(pair_exclusions.values()),
+            exclusion_counts=dict(pair_exclusions),
+            unavailable_reason=unavailable_reason,
+        )
+
+    no_samples = "no_valid_observations" if not metric_count else None
     point_metrics = {
-        "mae": MetricValue(
-        mae, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        None if metric_count else "no_valid_observations",
-        ),
-        "wape": MetricValue(
-        wape, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        wape_reason,
-        ),
-        "median": MetricValue(
-        median_absolute, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        None if metric_count else "no_valid_observations",
-        ),
-        "p90": MetricValue(
-        p90_absolute, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        None if metric_count else "no_valid_observations",
-        ),
-        "under": MetricValue(
-        underprediction_rate, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        None if metric_count else "no_valid_observations",
-        ),
-        "over": MetricValue(
-        overprediction_rate, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        None if metric_count else "no_valid_observations",
-        ),
-        "bias": MetricValue(
-        signed_bias, metric_count, sum(pair_exclusions.values()), dict(pair_exclusions),
-        None if metric_count else "no_valid_observations",
-        ),
+        "mae": point_metric(mae, no_samples),
+        "wape": point_metric(wape, wape_reason),
+        "median": point_metric(median_absolute, no_samples),
+        "p90": point_metric(p90_absolute, no_samples),
+        "under": point_metric(underprediction_rate, no_samples),
+        "over": point_metric(overprediction_rate, no_samples),
+        "bias": point_metric(signed_bias, no_samples),
     }
 
     interval_coverage_values: list[float] = []
     interval_widths: list[float] = []
     interval_exclusions = dict(pair_exclusions)
-    for predicted, actual, observation in valid:
+    for _predicted, actual, observation in valid:
         low = observation.predicted_low_tokens
         high = observation.predicted_high_tokens
+        expected = observation.predicted_expected_tokens
         if low is None or high is None:
             reason = "missing_prediction_interval"
+        elif expected is None:
+            reason = "invalid_prediction"
         elif not _valid_nonnegative_number(low) or not _valid_nonnegative_number(high):
             reason = "invalid_prediction_interval_bound"
         elif low > high:
             reason = "prediction_interval_low_exceeds_high"
+        elif (
+            low > expected
+            or high < expected
+        ):
+            reason = "prediction_interval_does_not_contain_expected"
         else:
             low_value = float(low)
             high_value = float(high)
@@ -247,11 +230,11 @@ def evaluate_metrics(observations: Iterable[MetricObservation]) -> EvaluationMet
 def normalize_anthropic_aggregate(
     *,
     event_count: int,
-    input_tokens: int | None,
-    output_tokens: int | None,
-    cache_creation_known_sum: int | None,
+    input_tokens: int | Decimal | None,
+    output_tokens: int | Decimal | None,
+    cache_creation_known_sum: int | Decimal | None,
     cache_creation_missing_event_count: int,
-    cache_read_known_sum: int | None,
+    cache_read_known_sum: int | Decimal | None,
     cache_read_missing_event_count: int,
 ) -> AnthropicUsageSummary:
     """Normalize one SQL-aggregated Anthropic execution without null coercion.
@@ -267,27 +250,51 @@ def normalize_anthropic_aggregate(
         raise ValueError("cache creation missing count is inconsistent with event count")
     if not 0 <= cache_read_missing_event_count <= event_count:
         raise ValueError("cache read missing count is inconsistent with event count")
-    raw_values = (input_tokens, output_tokens, cache_creation_known_sum, cache_read_known_sum)
-    if any(
-        value is not None
-        and (not isinstance(value, int) or isinstance(value, bool) or value < 0)
+    def normalize_counter(value: int | Decimal | None) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if value >= 0 else None
+        if isinstance(value, Decimal) and value.is_finite() and value >= 0:
+            if value == value.to_integral_value():
+                return int(value)
+        return None
+
+    raw_values = (
+        input_tokens,
+        output_tokens,
+        cache_creation_known_sum,
+        cache_read_known_sum,
+    )
+    normalized_values = tuple(
+        normalize_counter(value)
         for value in raw_values
+    )
+    if any(
+        original is not None and normalized is None
+        for original, normalized in zip(raw_values, normalized_values, strict=True)
     ):
         return AnthropicUsageSummary(
             primary_total_tokens=None,
             cache_exclusive_input_tokens=None,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=raw_values[0],
+            output_tokens=raw_values[1],
             cache_creation_input_tokens=None,
-            cache_creation_known_sum=cache_creation_known_sum,
+            cache_creation_known_sum=raw_values[2],
             cache_creation_missing_event_count=cache_creation_missing_event_count,
             cache_read_input_tokens=None,
-            cache_read_known_sum=cache_read_known_sum,
+            cache_read_known_sum=raw_values[3],
             cache_read_missing_event_count=cache_read_missing_event_count,
             cache_inclusive_input_tokens=None,
             cache_inclusive_total_tokens=None,
             unavailable_reason="negative_or_invalid_usage_counter",
         )
+
+    input_tokens, output_tokens, cache_creation_known_sum, cache_read_known_sum = (
+        normalized_values
+    )
     if event_count == 0:
         reason = "missing_usage_events"
         primary_total = None
@@ -305,13 +312,11 @@ def normalize_anthropic_aggregate(
     cache_read_complete = cache_read_missing_event_count == 0 and event_count > 0
     cache_creation_total = cache_creation_known_sum if cache_creation_complete else None
     cache_read_total = cache_read_known_sum if cache_read_complete else None
-    caches_complete = (
-        cache_creation_complete
-        and cache_read_complete
+    if (
+        input_tokens is not None
         and cache_creation_total is not None
         and cache_read_total is not None
-    )
-    if input_tokens is not None and caches_complete:
+    ):
         cache_inclusive_input = input_tokens + cache_creation_total + cache_read_total
         cache_inclusive_total = (
             cache_inclusive_input + output_tokens if output_tokens is not None else None

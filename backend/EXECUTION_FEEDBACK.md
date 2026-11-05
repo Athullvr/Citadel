@@ -13,7 +13,7 @@ Set these environment variables on every API worker:
 | --- | --- | --- |
 | `CITADEL_DATABASE_URL` | Yes for feedback routes | Hosted PostgreSQL URL (`postgresql://...` or `postgres://...`, normalized to psycopg 3). Local development may use a file-backed URL such as `sqlite:////absolute/path/citadel.db`. In-memory SQLite is rejected because it is not durable across workers. |
 | `CITADEL_EXECUTION_WORKSPACE_ID` | Yes for feedback routes | Server-owned identity used for every record. It is not accepted from request bodies. This release uses one configured workspace; it does not implement multi-tenant authentication. |
-| `CITADEL_API_KEY` | Yes for feedback routes | Bearer key for all `/api/executions` routes. `API_KEY` is accepted as the existing deployment fallback. These routes return 503 when neither is configured and 401 for missing or invalid credentials when a key is configured. |
+| `CITADEL_API_KEY` | Yes for feedback/evaluation routes | Bearer key for `/api/executions` and `/api/evaluations/summary`. `API_KEY` is accepted as the existing deployment fallback. These routes return 503 when neither is configured and 401 for missing or invalid credentials when a key is configured. |
 | `CITADEL_TASK_HASH_KEY` | Optional | Secret HMAC key for a keyed task hash. Without it, no task hash is stored. Raw task text is never stored in the prediction record. |
 
 PostgreSQL is the hosted source of truth. All workers must use the same database
@@ -44,7 +44,13 @@ its output, feature values/schema, model artifact SHA-256 when available,
 3. `POST /api/executions/{execution_id}/usage` appends one provider response's
    usage. Supply a stable UUID `event_id` and reuse it unchanged on retries.
 4. `POST /api/executions/{execution_id}/complete` moves a started execution to
-   `completed` or `failed` and returns its current usage aggregate.
+   `completed` or `failed` and returns its current usage aggregate. Callers may
+   include `expected_usage_event_count`, the number of unique usage reports they
+   expect for this execution. Omission leaves completeness `unknown` for legacy
+   compatibility. A count mismatch is `incomplete`; equality is `complete` by
+   the caller's declaration and does not prove provider telemetry is truthful.
+   Completion and detail responses include `usage_completeness` and the declared
+   count in execution metadata.
 5. `GET /api/executions/{execution_id}` returns metadata, linked prediction
    summary, and usage aggregate.
 
@@ -122,6 +128,90 @@ uses `data/telemetry_runs.jsonl`, leaving the frozen `data/runs.jsonl` baseline
 untouched. The runner's historical `total_input_tokens` and `total_tokens`
 fields retain their previous semantics; `total_processed_input_tokens` is an
 additional cache-inclusive value when all cache counters are present.
+
+## Prediction evaluation (0.3.1)
+
+`GET /api/evaluations/summary` is authenticated with the same server API key and
+uses the server-selected `CITADEL_EXECUTION_WORKSPACE_ID`; it accepts no
+workspace filter. Optional `from` and `to` timestamps are timezone-aware and
+filter on `execution.started_at` with an inclusive start and exclusive end.
+Optional filters select the prediction alias/artifact version, provider, exact
+provider model, and integration name/version. The report is computed from the
+immutable prediction, execution, and usage-event records and is not persisted.
+Prompts, feature snapshots, and task hashes are not returned.
+
+The primary target is Anthropic `input_tokens + output_tokens`. The recorded
+Anthropic `input_tokens` is already cache-exclusive, so cache creation and cache
+read counters are not subtracted from it. Those nullable counters are reported
+separately; cache-inclusive totals are unavailable when any cache field is
+missing. The execution detail endpoint's legacy `total_tokens` remains its
+cache-inclusive value and is not the evaluation target. Other providers are
+excluded until their token-counter semantics are explicitly supported.
+
+Usage events are grouped in SQL by `(workspace_id, execution_id)` before they
+are joined to predictions. Identical event retries do not add rows or inflate
+the event count. A prediction linked to more than one execution is excluded
+from accuracy metrics rather than choosing or combining a retry. Started
+executions and failed executions are kept out of completed-execution accuracy;
+failed usage is shown in a separate consumption group. Missing usage is counted
+separately and is never treated as zero.
+
+Every metric value includes a sample count, excluded count, and exclusion
+reasons. Point metrics use the expected prediction and signed error
+`actual - predicted`: positive bias means underprediction. MAE is mean absolute
+error; WAPE is `sum(abs(error)) / sum(actual) * 100` and is unavailable when
+the actual-token denominator is zero; median error uses the conventional
+middle-value median; P90 uses nearest-rank `ceil(0.9 * n)`; under/overprediction
+rates count strict positive/negative errors over all valid point observations;
+interval coverage is the percentage of actuals within valid inclusive bounds;
+interval width is the mean `high - low`. Invalid intervals are excluded only
+from interval metrics and include an exclusion reason. Empty samples return
+unavailable values. Groups with fewer than 30 distinct available task hashes,
+or with any missing task hash, are marked insufficient or independence-unknown.
+
+The report separates `verified_provider`, `unverified_submitted`,
+`synthetic_benchmark`, and legacy `unknown` provenance. The shared Bearer key
+does not authenticate provider identity: new non-synthetic submissions are
+unverified regardless of the caller-supplied `source`, while records explicitly
+marked synthetic are isolated as benchmark telemetry. No current API path can
+establish `verified_provider`, so descriptive metrics must not be presented as
+verified production accuracy. The report also segments available samples by
+prediction artifact, provider/exact model, and integration. Task category is
+unavailable because production execution records do not store it.
+
+Example summary shape (metric groups contain all point and interval metrics):
+
+```json
+{
+  "evaluation_status": "available",
+  "methodology_version": "citadel-token-evaluation-v1",
+  "primary_token_target": {
+    "id": "anthropic.cache_exclusive_input_plus_output.v1"
+  },
+  "eligible_completed_execution_count": 1,
+  "excluded_execution_count": 0,
+  "missing_usage_event_execution_count": 0,
+  "completeness_distribution": {"complete": 1},
+  "provenance_groups": [
+    {
+      "provenance": "unverified_submitted",
+      "metric_class": "descriptive_unverified",
+      "sample_count": 1,
+      "reliability": "task_independence_unknown",
+      "production_accuracy_claim_eligible": false,
+      "metrics": {
+        "mean_absolute_error_tokens": {
+          "value": 58.0,
+          "sample_count": 1,
+          "excluded_count": 0,
+          "exclusion_counts": {},
+          "unavailable_reason": null
+        }
+      }
+    }
+  ]
+}
+```
 
 ## Responses and error behavior
 

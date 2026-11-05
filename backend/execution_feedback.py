@@ -156,6 +156,7 @@ class ExecutionMetadata(BaseModel):
     external_run_id: str | None
     parent_execution_id: UUID | None
     is_synthetic: bool
+    expected_usage_event_count: int | None
     started_at: datetime
     completed_at: datetime | None
 
@@ -190,6 +191,7 @@ class ExecutionDetailResponse(BaseModel):
     prediction: PredictionSummary | None
     usage: UsageAggregate
     usage_event_count: int
+    usage_completeness: Literal["complete", "incomplete", "unknown"]
 
 
 class UsageEventResponse(BaseModel):
@@ -543,11 +545,18 @@ def _prediction_summary(db: Session, execution: ExecutionRecord) -> PredictionSu
 
 def _execution_detail(db: Session, execution: ExecutionRecord) -> ExecutionDetailResponse:
     usage, event_count = _aggregate_usage(db, execution)
+    if execution.expected_usage_event_count is None:
+        completeness: Literal["complete", "incomplete", "unknown"] = "unknown"
+    elif execution.expected_usage_event_count == event_count:
+        completeness = "complete"
+    else:
+        completeness = "incomplete"
     return ExecutionDetailResponse(
         execution=ExecutionMetadata.model_validate(execution),
         prediction=_prediction_summary(db, execution),
         usage=usage,
         usage_event_count=event_count,
+        usage_completeness=completeness,
     )
 
 
