@@ -161,6 +161,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 The opt-in execution feedback API adds prediction snapshots and provider usage
 records. See [backend/EXECUTION_FEEDBACK.md](backend/EXECUTION_FEEDBACK.md) for
 PostgreSQL setup, migrations, authentication, and the Anthropic runner option.
+See [multi-provider execution intelligence](backend/MULTI_PROVIDER.md) for provider
+availability, model registry status, token semantics, and usage submission.
 
 ### 2. Frontend Dashboard
 ```bash

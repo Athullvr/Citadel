@@ -20,6 +20,9 @@ COPY backend/api_schemas.py ./api_schemas.py
 COPY backend/database.py ./database.py
 COPY backend/execution_models.py ./execution_models.py
 COPY backend/execution_feedback.py ./execution_feedback.py
+COPY backend/provider_registry.py ./provider_registry.py
+COPY backend/prediction_registry.py ./prediction_registry.py
+COPY backend/usage_normalization.py ./usage_normalization.py
 COPY backend/request_limits.py ./request_limits.py
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/migrations ./migrations

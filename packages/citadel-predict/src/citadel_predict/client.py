@@ -249,16 +249,24 @@ class CitadelClient:
         task_text: str,
         tools: list[str] | None = None,
         model_id: str = "claude-sonnet",
+        *,
+        provider: str | None = None,
+        exact_provider_model: str | None = None,
     ) -> dict[str, Any]:
         """Create a persisted prediction snapshot for a forthcoming execution."""
+        payload: dict[str, Any] = {
+            "task_text": task_text,
+            "tools": list(tools) if tools is not None else [],
+            "model_id": model_id,
+        }
+        if provider is not None:
+            payload["provider"] = provider
+        if exact_provider_model is not None:
+            payload["exact_provider_model"] = exact_provider_model
         return self._execution_request(
             "POST",
             "/api/executions/predictions",
-            {
-                "task_text": task_text,
-                "tools": list(tools) if tools is not None else [],
-                "model_id": model_id,
-            },
+            payload,
             expected_status=(201,),
         )
 
@@ -293,18 +301,22 @@ class CitadelClient:
         integration_version: str | None,
         provider: str,
         exact_provider_model: str,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """Register a new execution under the configured workspace."""
+        payload: dict[str, Any] = {
+            "prediction_id": prediction_id,
+            "integration_name": integration_name,
+            "integration_version": integration_version,
+            "provider": provider,
+            "exact_provider_model": exact_provider_model,
+        }
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
         return self._execution_request(
             "POST",
             "/api/executions",
-            {
-                "prediction_id": prediction_id,
-                "integration_name": integration_name,
-                "integration_version": integration_version,
-                "provider": provider,
-                "exact_provider_model": exact_provider_model,
-            },
+            payload,
             expected_status=(201,),
         )
 
@@ -320,6 +332,7 @@ class CitadelClient:
         provider: str = "anthropic",
         exact_provider_model: str,
         use_adaptive_profile: bool = False,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """Create or reuse a prediction, start its execution, and return the safe detail record."""
         if (task_text is None) == (prediction_id is None):
@@ -339,7 +352,13 @@ class CitadelClient:
             )
             prediction_id = str(adaptive_prediction["prediction_id"])
         elif task_text is not None:
-            prediction = self.create_execution_prediction(task_text, tools, model_id)
+            prediction = self.create_execution_prediction(
+                task_text,
+                tools,
+                model_id,
+                provider=provider,
+                exact_provider_model=exact_provider_model,
+            )
             prediction_id = str(prediction["prediction_id"])
         execution = self.create_execution(
             prediction_id=prediction_id,
@@ -347,6 +366,7 @@ class CitadelClient:
             integration_version=integration_version,
             provider=provider,
             exact_provider_model=exact_provider_model,
+            reasoning_effort=reasoning_effort,
         )
         detail = self.get_execution_summary(str(execution["execution_id"]))
         if adaptive_prediction is not None:
@@ -364,27 +384,31 @@ class CitadelClient:
         event_id: str,
         provider: str,
         exact_provider_model: str,
-        input_tokens: int,
-        output_tokens: int,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         occurred_at: str | None = None,
+        provider_counters: dict[str, int | None] | None = None,
     ) -> dict[str, Any]:
         """Append an idempotent usage event without accepting caller provenance labels."""
+        payload: dict[str, Any] = {
+            "event_id": event_id,
+            "provider": provider,
+            "exact_provider_model": exact_provider_model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_creation_input_tokens": cache_creation_input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+            "source": "mcp_tool_submission",
+            "occurred_at": occurred_at or datetime.now(UTC).isoformat(),
+        }
+        if provider_counters is not None:
+            payload["provider_counters"] = provider_counters
         return self._execution_request(
             "POST",
             f"/api/executions/{execution_id}/usage",
-            {
-                "event_id": event_id,
-                "provider": provider,
-                "exact_provider_model": exact_provider_model,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cache_creation_input_tokens": cache_creation_input_tokens,
-                "cache_read_input_tokens": cache_read_input_tokens,
-                "source": "mcp_tool_submission",
-                "occurred_at": occurred_at or datetime.now(UTC).isoformat(),
-            },
+            payload,
         )
 
     def complete_execution(

@@ -291,13 +291,31 @@ def test_usage_aggregates_multiple_anthropic_events_and_cache_tokens(execution_c
     assert detail["usage_event_count"] == 2
     assert detail["usage"] == {
         "input_tokens": 30,
+        "input_tokens_known_sum": 30,
+        "input_tokens_missing_event_count": 0,
         "output_tokens": 12,
+        "output_tokens_known_sum": 12,
+        "output_tokens_missing_event_count": 0,
         "cache_creation_input_tokens": 5,
         "cache_creation_input_tokens_known_sum": 5,
         "cache_creation_missing_event_count": 0,
         "cache_read_input_tokens": 10,
         "cache_read_input_tokens_known_sum": 10,
         "cache_read_missing_event_count": 0,
+        "cached_input_tokens": 15,
+        "cached_input_tokens_known_sum": 15,
+        "cached_input_tokens_missing_event_count": 0,
+        "reasoning_tokens": None,
+        "reasoning_tokens_known_sum": None,
+        "reasoning_tokens_missing_event_count": 2,
+        "tool_use_prompt_tokens": None,
+        "tool_use_prompt_tokens_known_sum": None,
+        "tool_use_prompt_tokens_missing_event_count": 2,
+        "provider_reported_total_tokens": None,
+        "provider_reported_total_tokens_known_sum": None,
+        "provider_reported_total_tokens_missing_event_count": 2,
+        "token_semantics": "anthropic.messages.cache_exclusive_input.v1",
+        "provider_usage_completeness": {"complete": 2},
         "total_input_tokens": 45,
         "total_tokens": 57,
     }
@@ -322,6 +340,134 @@ def test_usage_distinguishes_missing_cache_fields_from_zero(execution_client):
     assert detail["usage"]["cache_read_input_tokens"] == 0
     assert detail["usage"]["total_input_tokens"] is None
     assert detail["usage"]["total_tokens"] is None
+
+
+def test_openai_provider_counters_persist_without_cache_or_reasoning_double_count(
+    execution_client, monkeypatch
+):
+    execution = execution_client.post(
+        "/api/executions",
+        json={
+            "integration_name": "openai-agent",
+            "provider": "OpenAI",
+            "exact_provider_model": "gpt-6-luna",
+            "reasoning_effort": "high",
+        },
+        headers=auth_headers(),
+    )
+    assert execution.status_code == 201
+    execution_id = execution.json()["execution_id"]
+    assert execution.json()["reasoning_effort"] == "high"
+
+    event_id = uuid4()
+    payload = {
+        "event_id": str(event_id),
+        "provider": "openai",
+        "exact_provider_model": "gpt-6-luna",
+        "provider_counters": {
+            "input_tokens": 20,
+            "input_tokens_details.cached_tokens": 8,
+            "output_tokens": 11,
+            "output_tokens_details.reasoning_tokens": 6,
+            "total_tokens": 31,
+        },
+        "source": "caller-provided-label",
+        "occurred_at": datetime.now(UTC).isoformat(),
+    }
+    first = execution_client.post(
+        f"/api/executions/{execution_id}/usage", json=payload, headers=auth_headers()
+    )
+    duplicate = execution_client.post(
+        f"/api/executions/{execution_id}/usage",
+        json={**payload, "occurred_at": datetime.now(UTC).isoformat()},
+        headers=auth_headers(),
+    )
+
+    assert first.status_code == 200
+    assert first.json()["token_semantics"] == "openai.responses.input_includes_cached.v1"
+    assert first.json()["usage_completeness"] == "complete"
+    assert duplicate.status_code == 200 and duplicate.json()["recorded"] is False
+    with _db_session(monkeypatch) as db:
+        stored = db.get(UsageEvent, event_id)
+        stored_execution = db.get(ExecutionRecord, UUID(execution_id))
+        assert stored.provider_counters == payload["provider_counters"]
+        assert stored.input_tokens == 20
+        assert stored.cached_input_tokens == 8
+        assert stored.output_tokens == 11
+        assert stored.reasoning_tokens == 6
+        assert stored.total_tokens == 31
+        assert stored.cache_read_input_tokens is None
+        assert stored_execution.telemetry_provenance == "unverified_submitted"
+
+    detail = execution_client.get(
+        f"/api/executions/{execution_id}", headers=auth_headers()
+    ).json()
+    assert detail["usage"]["input_tokens"] == 20
+    assert detail["usage"]["cached_input_tokens"] == 8
+    assert detail["usage"]["reasoning_tokens"] == 6
+    assert detail["usage"]["provider_reported_total_tokens"] == 31
+
+
+def test_missing_provider_counter_is_retained_as_missing_not_zero(execution_client):
+    execution = execution_client.post(
+        "/api/executions",
+        json={
+            "integration_name": "openai-agent",
+            "provider": "openai",
+            "exact_provider_model": "gpt-6-luna",
+        },
+        headers=auth_headers(),
+    ).json()
+    response = execution_client.post(
+        f"/api/executions/{execution['execution_id']}/usage",
+        json={
+            "event_id": str(uuid4()),
+            "provider": "openai",
+            "exact_provider_model": "gpt-6-luna",
+            "provider_counters": {"output_tokens": 4},
+            "source": "untrusted",
+            "occurred_at": datetime.now(UTC).isoformat(),
+        },
+        headers=auth_headers(),
+    )
+    assert response.status_code == 200
+    detail = execution_client.get(
+        f"/api/executions/{execution['execution_id']}", headers=auth_headers()
+    ).json()
+    assert detail["usage"]["input_tokens"] is None
+    assert detail["usage"]["output_tokens"] == 4
+    assert detail["usage"]["input_tokens_missing_event_count"] == 1
+    assert detail["usage"]["provider_usage_completeness"] == {"incomplete": 1}
+
+
+def test_reasoning_effort_validation_and_cross_provider_prediction_guard(execution_client):
+    invalid_effort = execution_client.post(
+        "/api/executions",
+        json={
+            "integration_name": "openai-agent",
+            "provider": "openai",
+            "exact_provider_model": "gpt-6-astra",
+            "reasoning_effort": "none",
+        },
+        headers=auth_headers(),
+    )
+    assert invalid_effort.status_code == 422
+
+    prediction = execution_client.post(
+        "/api/executions/predictions",
+        json=prediction_request(),
+        headers=auth_headers(),
+    ).json()
+    incompatible_prediction = execution_client.post(
+        "/api/executions",
+        json={
+            **execution_request(prediction["prediction_id"]),
+            "provider": "openai",
+            "exact_provider_model": "gpt-6-luna",
+        },
+        headers=auth_headers(),
+    )
+    assert incompatible_prediction.status_code == 409
 
 
 def test_execution_completion_is_terminal_and_returns_aggregate(execution_client):

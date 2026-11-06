@@ -4,9 +4,12 @@ This router uses a server-configured workspace and a dedicated fail-closed
 authentication dependency. It does not change the legacy prediction endpoint.
 """
 
+from __future__ import annotations
+
 import hashlib
 import hmac
 import os
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -27,11 +30,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from features import FEATURE_NAMES
 from predict import DEFAULT_MODEL, SUPPORTED_MODELS, get_bundle_path
 from predict import predict as run_predict
+from prediction_registry import resolve_prediction_registration, validate_prediction_request
 from pricing import DEFAULT_INPUT_RATIO, get_pricing
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from provider_registry import normalize_provider_id, validate_reasoning_effort
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from usage_normalization import NormalizedUsage, normalize_usage, validate_counter_map
 
 router = APIRouter(prefix="/api/executions", tags=["execution feedback"])
 _bearer = HTTPBearer(auto_error=False)
@@ -82,6 +88,8 @@ class CreatePredictionRequest(StrictRequest):
     task_text: str = Field(min_length=1, max_length=50000)
     tools: list[str] = Field(default_factory=list, max_length=20)
     model_id: str = Field(default=DEFAULT_MODEL, max_length=64)
+    provider: str | None = Field(default=None, max_length=64)
+    exact_provider_model: str | None = Field(default=None, max_length=128)
 
     @field_validator("tools")
     @classmethod
@@ -89,6 +97,36 @@ class CreatePredictionRequest(StrictRequest):
         if any(len(tool) > 64 for tool in value):
             raise ValueError("Each tool name must be at most 64 characters")
         return value
+
+    @field_validator("provider")
+    @classmethod
+    def normalize_prediction_provider(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = normalize_provider_id(value)
+        if not normalized:
+            raise ValueError("provider must not be blank")
+        return normalized
+
+    @field_validator("exact_provider_model")
+    @classmethod
+    def normalize_prediction_exact_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("exact_provider_model must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_provider_compatibility(self) -> CreatePredictionRequest:
+        if self.provider is not None or self.exact_provider_model is not None:
+            validate_prediction_request(
+                self.model_id,
+                provider=self.provider,
+                exact_provider_model=self.exact_provider_model,
+            )
+        return self
 
 
 class StoredPredictionResponse(PredictResponse):
@@ -105,18 +143,83 @@ class CreateExecutionRequest(StrictRequest):
     external_run_id: str | None = Field(default=None, max_length=256)
     parent_execution_id: UUID | None = None
     is_synthetic: bool = False
+    reasoning_effort: str | None = Field(default=None, max_length=16)
+
+    @field_validator("provider")
+    @classmethod
+    def normalize_provider(cls, value: str) -> str:
+        normalized = normalize_provider_id(value)
+        if not normalized:
+            raise ValueError("provider must not be blank")
+        return normalized
+
+    @field_validator("exact_provider_model")
+    @classmethod
+    def require_exact_model_identity(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("exact_provider_model must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_effort_for_model(self) -> CreateExecutionRequest:
+        validate_reasoning_effort(self.provider, self.exact_provider_model, self.reasoning_effort)
+        return self
 
 
 class CreateUsageEventRequest(StrictRequest):
     event_id: UUID
     provider: str = Field(min_length=1, max_length=64)
     exact_provider_model: str = Field(min_length=1, max_length=128)
-    input_tokens: int = Field(strict=True, ge=0, le=_MAX_BIGINT)
-    output_tokens: int = Field(strict=True, ge=0, le=_MAX_BIGINT)
+    input_tokens: int | None = Field(default=None, strict=True, ge=0, le=_MAX_BIGINT)
+    output_tokens: int | None = Field(default=None, strict=True, ge=0, le=_MAX_BIGINT)
     cache_creation_input_tokens: int | None = Field(default=None, strict=True, ge=0, le=_MAX_BIGINT)
     cache_read_input_tokens: int | None = Field(default=None, strict=True, ge=0, le=_MAX_BIGINT)
+    provider_counters: dict[str, StrictInt | None] | None = None
     source: str = Field(min_length=1, max_length=128)
     occurred_at: datetime
+
+    @field_validator("provider")
+    @classmethod
+    def normalize_provider(cls, value: str) -> str:
+        normalized = normalize_provider_id(value)
+        if not normalized:
+            raise ValueError("provider must not be blank")
+        return normalized
+
+    @field_validator("exact_provider_model")
+    @classmethod
+    def require_exact_model_identity(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("exact_provider_model must not be blank")
+        return value
+
+    @field_validator("provider_counters")
+    @classmethod
+    def validate_provider_counters(
+        cls, value: dict[str, int | None] | None
+    ) -> dict[str, int | None] | None:
+        return validate_counter_map(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_counter_source(self) -> CreateUsageEventRequest:
+        if self.provider_counters is not None:
+            if not self.provider_counters:
+                raise ValueError("provider_counters must contain at least one counter.")
+            if any(
+                getattr(self, field) is not None
+                for field in (
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_creation_input_tokens",
+                    "cache_read_input_tokens",
+                )
+            ):
+                raise ValueError("Use provider_counters or legacy token fields, not both.")
+        elif self.input_tokens is None or self.output_tokens is None:
+            raise ValueError("Both input_tokens and output_tokens are required for legacy usage.")
+        return self
 
     @field_validator("occurred_at")
     @classmethod
@@ -158,6 +261,7 @@ class ExecutionMetadata(BaseModel):
     is_synthetic: bool
     telemetry_provenance: str | None = None
     expected_usage_event_count: int | None
+    reasoning_effort: str | None = None
     started_at: datetime
     completed_at: datetime | None
 
@@ -176,13 +280,31 @@ class PredictionSummary(BaseModel):
 
 class UsageAggregate(BaseModel):
     input_tokens: int | None
+    input_tokens_known_sum: int | None
+    input_tokens_missing_event_count: int
     output_tokens: int | None
+    output_tokens_known_sum: int | None
+    output_tokens_missing_event_count: int
     cache_creation_input_tokens: int | None
     cache_creation_input_tokens_known_sum: int | None
     cache_creation_missing_event_count: int
     cache_read_input_tokens: int | None
     cache_read_input_tokens_known_sum: int | None
     cache_read_missing_event_count: int
+    cached_input_tokens: int | None
+    cached_input_tokens_known_sum: int | None
+    cached_input_tokens_missing_event_count: int
+    reasoning_tokens: int | None
+    reasoning_tokens_known_sum: int | None
+    reasoning_tokens_missing_event_count: int
+    tool_use_prompt_tokens: int | None
+    tool_use_prompt_tokens_known_sum: int | None
+    tool_use_prompt_tokens_missing_event_count: int
+    provider_reported_total_tokens: int | None
+    provider_reported_total_tokens_known_sum: int | None
+    provider_reported_total_tokens_missing_event_count: int
+    token_semantics: str
+    provider_usage_completeness: dict[str, int]
     total_input_tokens: int | None
     total_tokens: int | None
 
@@ -198,6 +320,8 @@ class ExecutionDetailResponse(BaseModel):
 class UsageEventResponse(BaseModel):
     event_id: UUID
     recorded: bool
+    token_semantics: str | None = None
+    usage_completeness: Literal["complete", "incomplete", "unknown"] = "unknown"
 
 
 def _artifact_digest(model_alias: str) -> str | None:
@@ -319,13 +443,29 @@ def create_prediction_record(
 ) -> StoredPredictionResponse:
     workspace_id = configured_workspace_id()
     if payload.model_id not in SUPPORTED_MODELS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
+        registration = resolve_prediction_registration(payload.model_id)
+        detail = (
+            f"Unsupported model_id '{payload.model_id}': no compatible calibrated estimator "
+            "is registered; no cross-provider fallback is used."
+            if registration is not None
+            else (
                 f"Unsupported model_id '{payload.model_id}'. "
                 f"Supported models in v1: {list(SUPPORTED_MODELS)}"
-            ),
+            )
         )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        )
+    if payload.provider is not None:
+        try:
+            validate_prediction_request(
+                payload.model_id,
+                provider=payload.provider,
+                exact_provider_model=payload.exact_provider_model,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     result = run_predict(payload.task_text, payload.tools, model_id=payload.model_id)
     return persist_prediction_snapshot(
@@ -361,6 +501,7 @@ def create_execution(
         external_run_id=payload.external_run_id,
         parent_execution_id=payload.parent_execution_id,
         is_synthetic=payload.is_synthetic,
+        reasoning_effort=payload.reasoning_effort,
         telemetry_provenance=(
             TELEMETRY_PROVENANCE_SYNTHETIC_BENCHMARK
             if payload.is_synthetic
@@ -378,6 +519,18 @@ def create_execution(
             )
             if prediction is None:
                 raise HTTPException(status_code=404, detail="Prediction not found")
+            prediction_registration = resolve_prediction_registration(prediction.model_alias)
+            if (
+                prediction_registration is not None
+                and prediction_registration.provider != payload.provider
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Prediction estimator is not compatible with the execution provider; "
+                        "create a provider-compatible prediction before starting execution."
+                    ),
+                )
         if payload.parent_execution_id is not None:
             parent = db.scalar(
                 select(ExecutionRecord).where(
@@ -393,7 +546,10 @@ def create_execution(
 
 
 def _event_matches(
-    existing: UsageEvent, execution_id: UUID, payload: CreateUsageEventRequest
+    existing: UsageEvent,
+    execution_id: UUID,
+    payload: CreateUsageEventRequest,
+    normalized: NormalizedUsage,
 ) -> bool:
     # Event IDs define logical event identity. An omitted client timestamp can
     # differ on a retry; preserve the first timestamp and compare usage payloads.
@@ -401,10 +557,17 @@ def _event_matches(
         existing.execution_id == execution_id
         and existing.provider == payload.provider
         and existing.exact_provider_model == payload.exact_provider_model
-        and existing.input_tokens == payload.input_tokens
-        and existing.output_tokens == payload.output_tokens
-        and existing.cache_creation_input_tokens == payload.cache_creation_input_tokens
-        and existing.cache_read_input_tokens == payload.cache_read_input_tokens
+        and existing.input_tokens == normalized.input_tokens
+        and existing.output_tokens == normalized.output_tokens
+        and existing.cache_creation_input_tokens == normalized.cache_creation_input_tokens
+        and existing.cache_read_input_tokens == normalized.cache_read_input_tokens
+        and existing.cached_input_tokens == normalized.cached_input_tokens
+        and existing.reasoning_tokens == normalized.reasoning_tokens
+        and existing.tool_use_prompt_tokens == normalized.tool_use_prompt_tokens
+        and existing.total_tokens == normalized.total_tokens
+        and existing.token_semantics == normalized.token_semantics
+        and existing.usage_completeness == normalized.usage_completeness
+        and existing.provider_counters == normalized.provider_counters
         and existing.source == payload.source
     )
 
@@ -422,16 +585,40 @@ def record_usage_event(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> UsageEventResponse:
     workspace_id = configured_workspace_id()
+    legacy_counters = {
+        field: getattr(payload, field)
+        for field in (
+            "input_tokens",
+            "output_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
+        )
+        if field in payload.model_fields_set
+    }
+    normalized = normalize_usage(
+        provider=payload.provider,
+        exact_provider_model=payload.exact_provider_model,
+        provider_counters=payload.provider_counters,
+        legacy_counters=legacy_counters if payload.provider_counters is None else None,
+        legacy_fields_present=set(payload.model_fields_set),
+    )
     event_record = UsageEvent(
         event_id=payload.event_id,
         execution_id=execution_id,
         workspace_id=workspace_id,
         provider=payload.provider,
         exact_provider_model=payload.exact_provider_model,
-        input_tokens=payload.input_tokens,
-        output_tokens=payload.output_tokens,
-        cache_creation_input_tokens=payload.cache_creation_input_tokens,
-        cache_read_input_tokens=payload.cache_read_input_tokens,
+        input_tokens=normalized.input_tokens,
+        output_tokens=normalized.output_tokens,
+        cache_creation_input_tokens=normalized.cache_creation_input_tokens,
+        cache_read_input_tokens=normalized.cache_read_input_tokens,
+        cached_input_tokens=normalized.cached_input_tokens,
+        reasoning_tokens=normalized.reasoning_tokens,
+        tool_use_prompt_tokens=normalized.tool_use_prompt_tokens,
+        total_tokens=normalized.total_tokens,
+        token_semantics=normalized.token_semantics,
+        usage_completeness=normalized.usage_completeness,
+        provider_counters=normalized.provider_counters,
         source=payload.source,
         occurred_at=payload.occurred_at,
         received_at=utc_now(),
@@ -451,9 +638,14 @@ def record_usage_event(
             existing = db.get(UsageEvent, payload.event_id)
             if existing is not None:
                 if existing.workspace_id == workspace_id and _event_matches(
-                    existing, execution_id, payload
+                    existing, execution_id, payload, normalized
                 ):
-                    return UsageEventResponse(event_id=payload.event_id, recorded=False)
+                    return UsageEventResponse(
+                        event_id=payload.event_id,
+                        recorded=False,
+                        token_semantics=normalized.token_semantics,
+                        usage_completeness=normalized.usage_completeness,
+                    )
                 raise HTTPException(
                     status_code=409,
                     detail="event_id was already used for different usage data",
@@ -468,17 +660,32 @@ def record_usage_event(
                     status_code=409,
                     detail="Usage provider must match the execution record.",
                 )
+            if execution.exact_provider_model != payload.exact_provider_model:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Usage exact model must match the execution record.",
+                )
 
             db.add(event_record)
             db.flush()
-        return UsageEventResponse(event_id=payload.event_id, recorded=True)
+        return UsageEventResponse(
+            event_id=payload.event_id,
+            recorded=True,
+            token_semantics=normalized.token_semantics,
+            usage_completeness=normalized.usage_completeness,
+        )
     except IntegrityError as exc:
         # A concurrent retry may win the unique-key race after the pre-check.
         db.rollback()
         existing = db.get(UsageEvent, payload.event_id)
         if existing is not None and existing.workspace_id == workspace_id:
-            if _event_matches(existing, execution_id, payload):
-                return UsageEventResponse(event_id=payload.event_id, recorded=False)
+            if _event_matches(existing, execution_id, payload, normalized):
+                return UsageEventResponse(
+                    event_id=payload.event_id,
+                    recorded=False,
+                    token_semantics=normalized.token_semantics,
+                    usage_completeness=normalized.usage_completeness,
+                )
             raise HTTPException(
                 status_code=409,
                 detail="event_id was already used for different usage data",
@@ -507,12 +714,29 @@ def _aggregate_usage(db: Session, execution: ExecutionRecord) -> tuple[UsageAggr
         )
     )
     event_count = len(events)
-    input_total = sum(event.input_tokens for event in events) if events else None
-    output_total = sum(event.output_tokens for event in events) if events else None
+    input_total, input_known, input_missing = _sum_optional_field(events, "input_tokens")
+    output_total, output_known, output_missing = _sum_optional_field(events, "output_tokens")
     create_total, create_known, create_missing = _sum_optional_field(
         events, "cache_creation_input_tokens"
     )
     read_total, read_known, read_missing = _sum_optional_field(events, "cache_read_input_tokens")
+    cached_total, cached_known, cached_missing = _sum_optional_field(events, "cached_input_tokens")
+    reasoning_total, reasoning_known, reasoning_missing = _sum_optional_field(
+        events, "reasoning_tokens"
+    )
+    tool_total, tool_known, tool_missing = _sum_optional_field(events, "tool_use_prompt_tokens")
+    provider_total, provider_total_known, provider_total_missing = _sum_optional_field(
+        events, "total_tokens"
+    )
+    semantics = {event.token_semantics for event in events}
+    non_null_semantics = {value for value in semantics if value is not None}
+    if len(non_null_semantics) > 1 or (None in semantics and non_null_semantics):
+        token_semantics = "mixed_or_unknown"
+    elif non_null_semantics:
+        token_semantics = next(iter(non_null_semantics))
+    else:
+        token_semantics = "unknown_legacy"
+    provider_completeness = dict(Counter(event.usage_completeness for event in events))
 
     total_input = None
     total_tokens = None
@@ -530,13 +754,31 @@ def _aggregate_usage(db: Session, execution: ExecutionRecord) -> tuple[UsageAggr
     return (
         UsageAggregate(
             input_tokens=input_total,
+            input_tokens_known_sum=input_known,
+            input_tokens_missing_event_count=input_missing,
             output_tokens=output_total,
+            output_tokens_known_sum=output_known,
+            output_tokens_missing_event_count=output_missing,
             cache_creation_input_tokens=create_total,
             cache_creation_input_tokens_known_sum=create_known,
             cache_creation_missing_event_count=create_missing,
             cache_read_input_tokens=read_total,
             cache_read_input_tokens_known_sum=read_known,
             cache_read_missing_event_count=read_missing,
+            cached_input_tokens=cached_total,
+            cached_input_tokens_known_sum=cached_known,
+            cached_input_tokens_missing_event_count=cached_missing,
+            reasoning_tokens=reasoning_total,
+            reasoning_tokens_known_sum=reasoning_known,
+            reasoning_tokens_missing_event_count=reasoning_missing,
+            tool_use_prompt_tokens=tool_total,
+            tool_use_prompt_tokens_known_sum=tool_known,
+            tool_use_prompt_tokens_missing_event_count=tool_missing,
+            provider_reported_total_tokens=provider_total,
+            provider_reported_total_tokens_known_sum=provider_total_known,
+            provider_reported_total_tokens_missing_event_count=provider_total_missing,
+            token_semantics=token_semantics,
+            provider_usage_completeness=provider_completeness,
             total_input_tokens=total_input,
             total_tokens=total_tokens,
         ),

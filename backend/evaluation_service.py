@@ -268,7 +268,13 @@ def load_evaluation_dataset(
             UsageEvent.execution_id.label("execution_id"),
             func.count(UsageEvent.event_id).label("usage_event_count"),
             func.sum(UsageEvent.input_tokens).label("input_tokens"),
+            (
+                func.count(UsageEvent.event_id) - func.count(UsageEvent.input_tokens)
+            ).label("input_missing_event_count"),
             func.sum(UsageEvent.output_tokens).label("output_tokens"),
+            (
+                func.count(UsageEvent.event_id) - func.count(UsageEvent.output_tokens)
+            ).label("output_missing_event_count"),
             func.sum(UsageEvent.cache_creation_input_tokens).label("cache_creation_known_sum"),
             (
                 func.count(UsageEvent.event_id)
@@ -310,7 +316,9 @@ def load_evaluation_dataset(
             PredictionRecord,
             usage.c.usage_event_count,
             usage.c.input_tokens,
+            usage.c.input_missing_event_count,
             usage.c.output_tokens,
+            usage.c.output_missing_event_count,
             usage.c.cache_creation_known_sum,
             usage.c.cache_creation_missing_event_count,
             usage.c.cache_read_known_sum,
@@ -418,8 +426,12 @@ def load_evaluation_dataset(
 
         usage_summary = normalize_anthropic_aggregate(
             event_count=event_count,
-            input_tokens=row.input_tokens,
-            output_tokens=row.output_tokens,
+            input_tokens=(
+                None if int(row.input_missing_event_count or 0) else row.input_tokens
+            ),
+            output_tokens=(
+                None if int(row.output_missing_event_count or 0) else row.output_tokens
+            ),
             cache_creation_known_sum=row.cache_creation_known_sum,
             cache_creation_missing_event_count=int(row.cache_creation_missing_event_count or 0),
             cache_read_known_sum=row.cache_read_known_sum,

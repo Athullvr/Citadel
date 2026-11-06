@@ -131,6 +131,7 @@ class ExecutionRecord(Base):
     is_synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     expected_usage_event_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     telemetry_provenance: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
@@ -147,8 +148,12 @@ class UsageEvent(Base):
         UniqueConstraint(
             "workspace_id", "execution_id", "idempotency_identifier", name="uq_usage_idempotency"
         ),
-        CheckConstraint("input_tokens >= 0", name="ck_usage_input_nonnegative"),
-        CheckConstraint("output_tokens >= 0", name="ck_usage_output_nonnegative"),
+        CheckConstraint(
+            "input_tokens IS NULL OR input_tokens >= 0", name="ck_usage_input_nonnegative"
+        ),
+        CheckConstraint(
+            "output_tokens IS NULL OR output_tokens >= 0", name="ck_usage_output_nonnegative"
+        ),
         CheckConstraint(
             "cache_creation_input_tokens IS NULL OR cache_creation_input_tokens >= 0",
             name="ck_usage_cache_creation_nonnegative",
@@ -156,6 +161,25 @@ class UsageEvent(Base):
         CheckConstraint(
             "cache_read_input_tokens IS NULL OR cache_read_input_tokens >= 0",
             name="ck_usage_cache_read_nonnegative",
+        ),
+        CheckConstraint(
+            "cached_input_tokens IS NULL OR cached_input_tokens >= 0",
+            name="ck_usage_cached_nonnegative",
+        ),
+        CheckConstraint(
+            "reasoning_tokens IS NULL OR reasoning_tokens >= 0",
+            name="ck_usage_reasoning_nonnegative",
+        ),
+        CheckConstraint(
+            "tool_use_prompt_tokens IS NULL OR tool_use_prompt_tokens >= 0",
+            name="ck_usage_tool_prompt_nonnegative",
+        ),
+        CheckConstraint(
+            "total_tokens IS NULL OR total_tokens >= 0", name="ck_usage_total_nonnegative"
+        ),
+        CheckConstraint(
+            "usage_completeness IN ('complete', 'incomplete', 'unknown')",
+            name="ck_usage_event_completeness",
         ),
         Index("ix_usage_events_workspace_execution", "workspace_id", "execution_id"),
     )
@@ -165,10 +189,21 @@ class UsageEvent(Base):
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     exact_provider_model: Mapped[str] = mapped_column(String(128), nullable=False)
-    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cache_creation_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cache_read_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reasoning_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tool_use_prompt_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    token_semantics: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    usage_completeness: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown"
+    )
+    provider_counters: Mapped[dict[str, int | None] | None] = mapped_column(
+        SnapshotJSON, nullable=True
+    )
     source: Mapped[str] = mapped_column(String(128), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     received_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)

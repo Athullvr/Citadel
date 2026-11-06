@@ -90,6 +90,8 @@ from predict import (  # noqa: E402
 from predict import (  # noqa: E402
     predict as run_predict,
 )
+from prediction_registry import prediction_catalog, resolve_prediction_registration  # noqa: E402
+from provider_registry import PROVIDERS, REGISTRY_VERIFIED_ON, public_model_registry  # noqa: E402
 from request_limits import ExecutionRequestBodyLimitMiddleware  # noqa: E402
 from tools import TOOL_SCHEMAS  # noqa: E402
 
@@ -329,6 +331,27 @@ def list_tools(request: Request):
     ]
 
 
+@app.get("/api/models")
+@limiter.limit("60/minute")
+def list_models(request: Request) -> dict[str, Any]:
+    """Expose documented registry metadata and estimator availability."""
+    return {
+        "registry_verified_on": REGISTRY_VERIFIED_ON,
+        "providers": [
+            {
+                "provider_id": definition.provider_id,
+                "display_name": definition.display_name,
+                "status": definition.status,
+                "usage_normalizer": definition.usage_normalizer,
+                "authenticated_telemetry": definition.authenticated_telemetry,
+            }
+            for definition in PROVIDERS.values()
+        ],
+        "provider_models": public_model_registry(),
+        "prediction_models": prediction_catalog(),
+    }
+
+
 @app.post("/api/predict", response_model=PredictResponse)
 @limiter.limit("30/minute")
 def predict(
@@ -341,12 +364,20 @@ def predict(
     Requires Bearer API key auth if CITADEL_API_KEY / API_KEY is set.
     """
     if req.model_id not in SUPPORTED_MODELS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
+        registration = resolve_prediction_registration(req.model_id)
+        if registration and registration.estimator_status == "uncalibrated":
+            detail = (
+                f"Unsupported model_id '{req.model_id}': the provider model is registered "
+                "but has no compatible Citadel estimator. No cross-provider fallback is used."
+            )
+        else:
+            detail = (
                 f"Unsupported model_id '{req.model_id}'. "
                 f"Supported models in v1: {list(SUPPORTED_MODELS)}"
-            ),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
         )
 
     try:

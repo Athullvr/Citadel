@@ -28,7 +28,6 @@ except ImportError:  # pragma: no cover
     from mcp.server.fastmcp import FastMCP as MCPServer  # type: ignore[attr-defined,no-redef]
 
 
-_SUPPORTED_EXECUTION_PROVIDER = "anthropic"
 _MAX_BIGINT = 2**63 - 1
 
 
@@ -61,6 +60,7 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
         "integration_version": execution.get("integration_version"),
         "provider": execution.get("provider"),
         "exact_provider_model": execution.get("exact_provider_model"),
+        "reasoning_effort": execution.get("reasoning_effort"),
         "started_at": execution.get("started_at"),
         "completed_at": execution.get("completed_at"),
         "usage_completeness": data.get("usage_completeness", "unknown"),
@@ -78,6 +78,20 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
                 "cache_read_input_tokens",
                 "cache_read_input_tokens_known_sum",
                 "cache_read_missing_event_count",
+                "cached_input_tokens",
+                "cached_input_tokens_known_sum",
+                "cached_input_tokens_missing_event_count",
+                "reasoning_tokens",
+                "reasoning_tokens_known_sum",
+                "reasoning_tokens_missing_event_count",
+                "tool_use_prompt_tokens",
+                "tool_use_prompt_tokens_known_sum",
+                "tool_use_prompt_tokens_missing_event_count",
+                "provider_reported_total_tokens",
+                "provider_reported_total_tokens_known_sum",
+                "provider_reported_total_tokens_missing_event_count",
+                "token_semantics",
+                "provider_usage_completeness",
                 "total_input_tokens",
                 "total_tokens",
             )
@@ -125,11 +139,6 @@ def _execution_error(operation: str, exc: Exception) -> dict[str, Any]:
     return result
 
 
-def _validate_anthropic_provider(provider: str) -> None:
-    if provider != _SUPPORTED_EXECUTION_PROVIDER:
-        raise ValueError("This MCP execution integration currently supports Anthropic only.")
-
-
 def _validate_counter(name: str, value: int | None, *, nullable: bool = False) -> None:
     if value is None and nullable:
         return
@@ -145,7 +154,9 @@ def create_server() -> MCPServer:
         name="citadel-predict",
         instructions=(
             "Citadel Predict MCP Server provides pre-execution token budget "
-            "and cost estimation, plus explicit Anthropic execution lifecycle tracking."
+            "and cost estimation, plus explicit provider-aware execution lifecycle tracking. "
+            "Submitted usage is unverified unless received through a separately authenticated "
+            "provider integration."
         ),
     )
 
@@ -293,7 +304,8 @@ def create_server() -> MCPServer:
     @app.tool(
         name="begin_execution",
         description=(
-            "Create or attach a prediction and register an Anthropic execution before it runs. "
+            "Create or attach a compatible prediction and register a provider execution "
+            "before it runs. "
             "Optionally apply an eligible workspace execution profile when creating a new "
             "prediction. Returns an execution ID for usage recording and completion."
         ),
@@ -308,10 +320,10 @@ def create_server() -> MCPServer:
         integration_name: str = "citadel-predict-mcp",
         integration_version: str | None = None,
         use_adaptive_profile: bool = False,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """Create a prediction if needed and register the execution."""
         try:
-            _validate_anthropic_provider(provider)
             if (task_text is None) == (prediction_id is None):
                 raise ValueError("Provide exactly one of task_text or prediction_id.")
             if not exact_provider_model.strip():
@@ -332,6 +344,7 @@ def create_server() -> MCPServer:
                     provider=provider,
                     exact_provider_model=exact_provider_model,
                     use_adaptive_profile=use_adaptive_profile,
+                    reasoning_effort=reasoning_effort,
                 )
             return _safe_execution_summary(detail)
         except (CitadelError, ValueError, KeyError) as exc:
@@ -344,7 +357,7 @@ def create_server() -> MCPServer:
     @app.tool(
         name="record_execution_usage",
         description=(
-            "Append one idempotent Anthropic usage event to a started execution. "
+            "Append one idempotent provider usage event to a started execution. "
             "Supply the same event_id when retrying the same event."
         ),
     )
@@ -352,24 +365,35 @@ def create_server() -> MCPServer:
         execution_id: str,
         event_id: str,
         exact_provider_model: str,
-        input_tokens: int,
-        output_tokens: int,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         provider: str = "anthropic",
         occurred_at: str | None = None,
+        provider_counters: dict[str, int | None] | None = None,
     ) -> dict[str, Any]:
         """Record provider counters as unverified submitted telemetry."""
         try:
-            _validate_anthropic_provider(provider)
             UUID(execution_id)
             UUID(event_id)
-            _validate_counter("input_tokens", input_tokens)
-            _validate_counter("output_tokens", output_tokens)
+            _validate_counter("input_tokens", input_tokens, nullable=True)
+            _validate_counter("output_tokens", output_tokens, nullable=True)
             _validate_counter(
                 "cache_creation_input_tokens", cache_creation_input_tokens, nullable=True
             )
             _validate_counter("cache_read_input_tokens", cache_read_input_tokens, nullable=True)
+            if provider_counters is not None:
+                if not isinstance(provider_counters, dict) or not provider_counters:
+                    raise ValueError("provider_counters must be a non-empty counter map.")
+                if len(provider_counters) > 32:
+                    raise ValueError("provider_counters may contain at most 32 counters.")
+                for name, value in provider_counters.items():
+                    if not isinstance(name, str) or not name.strip() or len(name) > 96:
+                        raise ValueError(
+                            "Provider counter names must be non-empty and at most 96 characters."
+                        )
+                    _validate_counter(f"provider_counters.{name}", value, nullable=True)
             if not exact_provider_model.strip():
                 raise ValueError("exact_provider_model is required.")
             if occurred_at is not None:
@@ -387,6 +411,7 @@ def create_server() -> MCPServer:
                     cache_creation_input_tokens=cache_creation_input_tokens,
                     cache_read_input_tokens=cache_read_input_tokens,
                     occurred_at=occurred_at,
+                    provider_counters=provider_counters,
                 )
             return {
                 "success": True,

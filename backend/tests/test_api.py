@@ -94,6 +94,34 @@ def test_predict_unsupported_model_id(client):
     assert "Unsupported model_id" in data["detail"]
 
 
+def test_registered_uncalibrated_provider_model_never_uses_claude_estimator(client):
+    response = client.post(
+        "/api/predict",
+        json={
+            "task_text": "Estimate for another provider.",
+            "tools": [],
+            "model_id": "gpt-6-luna",
+        },
+    )
+    assert response.status_code == 400
+    assert "no compatible Citadel estimator" in response.json()["detail"]
+    assert "No cross-provider fallback" in response.json()["detail"]
+
+
+def test_model_registry_exposes_exact_models_and_calibration_status(client):
+    response = client.get("/api/models")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["registry_verified_on"]
+    assert any(
+        row["exact_model_id"] == "gpt-6-astra" and row["estimator_status"] == "uncalibrated"
+        for row in data["provider_models"]
+    )
+    claude = next(row for row in data["prediction_models"] if row["model_id"] == "claude-sonnet")
+    assert claude["estimator_status"] == "calibrated"
+    assert claude["exact_provider_model"] is None
+
+
 def test_predict_validation_errors_standardized(client):
     # Empty task_text
     res = client.post("/api/predict", json={"task_text": "", "tools": []})
