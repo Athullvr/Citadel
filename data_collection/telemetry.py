@@ -48,7 +48,11 @@ class CitadelTelemetry:
         return response.json()
 
     def start_execution(self, task: dict[str, Any], model: str) -> TelemetryExecution | None:
-        """Create the immutable prediction and execution records best-effort."""
+        """Create records without treating the requested model string as resolved identity."""
+        # The argument is the request configured by the runner. It is not proof
+        # of the provider-resolved model returned by a provider-authenticated
+        # channel, so it must not populate exact_provider_model.
+        _ = model
         try:
             prediction = self._post(
                 "/api/executions/predictions",
@@ -66,7 +70,6 @@ class CitadelTelemetry:
                     "integration_name": "citadel-data-collection-agent-runner",
                     "integration_version": "0.3.0",
                     "provider": "anthropic",
-                    "exact_provider_model": model,
                     "is_synthetic": True,
                 },
             )
@@ -92,7 +95,10 @@ class CitadelTelemetry:
         payload = {
             "event_id": str(event_id),
             "provider": "anthropic",
-            "exact_provider_model": str(response.model),
+            # Caller-submitted provider response metadata is not an identity
+            # authority. Keep the usage event on the execution's unresolved
+            # identity until a trusted provider-authenticated writer exists.
+            "exact_provider_model": None,
             "input_tokens": int(usage.input_tokens),
             "output_tokens": int(usage.output_tokens),
             "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),

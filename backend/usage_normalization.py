@@ -19,7 +19,7 @@ MAX_COUNTER_VALUE = 2**63 - 1
 @dataclass(frozen=True, slots=True)
 class NormalizedUsage:
     provider: str
-    exact_provider_model: str
+    exact_provider_model: str | None
     input_tokens: int | None
     output_tokens: int | None
     cache_creation_input_tokens: int | None
@@ -38,7 +38,7 @@ class UsageAdapter(Protocol):
 
     def normalize(
         self,
-        exact_provider_model: str,
+        exact_provider_model: str | None,
         counters: Mapping[str, int | None],
     ) -> NormalizedUsage: ...
 
@@ -77,7 +77,7 @@ class AnthropicMessagesAdapter:
     provider_id = "anthropic"
 
     def normalize(
-        self, exact_provider_model: str, counters: Mapping[str, int | None]
+        self, exact_provider_model: str | None, counters: Mapping[str, int | None]
     ) -> NormalizedUsage:
         input_tokens = _value(counters, "input_tokens")
         output_tokens = _value(counters, "output_tokens")
@@ -119,7 +119,7 @@ class OpenAIResponsesAdapter:
     provider_id = "openai"
 
     def normalize(
-        self, exact_provider_model: str, counters: Mapping[str, int | None]
+        self, exact_provider_model: str | None, counters: Mapping[str, int | None]
     ) -> NormalizedUsage:
         return NormalizedUsage(
             provider=self.provider_id,
@@ -153,7 +153,7 @@ class GeminiGenerateContentAdapter:
     provider_id = "google"
 
     def normalize(
-        self, exact_provider_model: str, counters: Mapping[str, int | None]
+        self, exact_provider_model: str | None, counters: Mapping[str, int | None]
     ) -> NormalizedUsage:
         return NormalizedUsage(
             provider=self.provider_id,
@@ -192,7 +192,7 @@ _ADAPTERS: dict[str, UsageAdapter] = {
 def normalize_usage(
     *,
     provider: str,
-    exact_provider_model: str,
+    exact_provider_model: str | None,
     provider_counters: Mapping[str, int | None] | None = None,
     legacy_counters: Mapping[str, int | None] | None = None,
     legacy_fields_present: set[str] | None = None,

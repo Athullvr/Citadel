@@ -29,10 +29,13 @@ class EvaluationGroupResponse(BaseModel):
     outcome: str
     key: dict[str, str | None]
     sample_count: int
+    execution_sample_count: int
     independent_task_count: int
     task_hash_missing_count: int
     reliability: str
     production_accuracy_claim_eligible: bool
+    accuracy_claim_status: str
+    coverage_interpretation: str
     metrics: dict[str, MetricValueResponse]
     cache_usage: dict[str, int | None]
 
@@ -57,6 +60,7 @@ class EvaluationSummaryResponse(BaseModel):
     segments: dict[str, list[EvaluationGroupResponse]]
     task_category: dict[str, Any]
     filters: dict[str, str | None]
+    statistical_reporting: dict[str, str]
     production_accuracy_claim_eligible: bool
 
 

@@ -50,7 +50,7 @@ def execution_request(prediction_id: str | None = None) -> dict:
         "integration_name": "test-agent",
         "integration_version": "0.1.0",
         "provider": "anthropic",
-        "exact_provider_model": "claude-sonnet-5",
+        "exact_provider_model": "test-anthropic-model-v1",
     }
 
 
@@ -58,7 +58,7 @@ def usage_request(event_id: UUID | None = None, **overrides) -> dict:
     payload = {
         "event_id": str(event_id or uuid4()),
         "provider": "anthropic",
-        "exact_provider_model": "claude-sonnet-5",
+        "exact_provider_model": "test-anthropic-model-v1",
         "input_tokens": 10,
         "output_tokens": 5,
         "cache_creation_input_tokens": 0,
@@ -94,7 +94,7 @@ def test_cancelled_status_migration_downgrade_and_reupgrade(tmp_path, monkeypatc
                 "migration-test",
                 "migration-test",
                 "anthropic",
-                "claude-sonnet-5",
+                "caller-reported-legacy-model",
                 "started",
                 datetime.now(UTC).isoformat(),
             ),
@@ -163,7 +163,9 @@ def test_prediction_snapshot_is_persisted_without_raw_task(execution_client, mon
         assert record.predicted_expected_tokens == data["expected_tokens"]
         assert record.estimated_expected_cost == data["expected_cost_usd"]
         assert record.model_alias == "claude-sonnet"
-        assert record.model_artifact_version.startswith("sha256:")
+        assert record.model_artifact_version.startswith(
+            "frozen-claude-sonnet-bundle@sha256:"
+        )
         assert record.feature_schema_version == "citadel-features-v1"
         assert (
             record.prediction_payload_snapshot["response"]["expected_tokens"]

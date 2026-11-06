@@ -22,6 +22,7 @@ from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_
 from fastapi import HTTPException
 from main import app
 from pydantic import ValidationError
+from prediction_identity import CLAUDE_TOKEN_TARGET_SEMANTICS, make_prediction_identity
 from sqlalchemy.orm import Session
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -41,18 +42,47 @@ def evaluation_database(tmp_path, monkeypatch):
     engine.dispose()
 
 
-def insert_prediction(engine, *, task_hash: str | None = None) -> PredictionRecord:
+def insert_prediction(
+    engine,
+    *,
+    task_hash: str | None = None,
+    provider: str = "anthropic",
+    provider_model: str = "test-anthropic-model-a-v1",
+) -> PredictionRecord:
+    artifact_sha256 = "a" * 64
+    artifact_version = f"evaluation-test-estimator@sha256:{artifact_sha256}"
+    identity = make_prediction_identity(
+        identity_status="resolved",
+        provider=provider,
+        exact_provider_model=provider_model,
+        model_alias="claude-sonnet",
+        token_target_semantics=CLAUDE_TOKEN_TARGET_SEMANTICS,
+        estimator_artifact_version=artifact_version,
+        estimator_artifact_sha256=artifact_sha256,
+        pricing_schedule_version=None,
+    )
     prediction = PredictionRecord(
         prediction_id=uuid4(),
         workspace_id=WORKSPACE_ID,
         created_at=utc_now(),
         model_alias="claude-sonnet",
-        model_artifact_version="sha256:evaluation-test-artifact",
+        provider=identity.provider,
+        exact_provider_model=identity.exact_provider_model,
+        identity_schema_version=identity.identity_schema_version,
+        identity_status=identity.identity_status,
+        token_target_semantics=identity.token_target_semantics,
+        estimator_artifact_version=identity.estimator_artifact_version,
+        estimator_artifact_sha256=identity.estimator_artifact_sha256,
+        prediction_identity_hash=identity.prediction_identity_hash,
+        model_artifact_version=identity.estimator_artifact_version,
         feature_schema_version="citadel-features-v1",
         predicted_low_tokens=80,
         predicted_expected_tokens=100,
         predicted_high_tokens=130,
-        prediction_payload_snapshot={"response": {"expected_tokens": 100}},
+        prediction_payload_snapshot={
+            "response": {"expected_tokens": 100},
+            "prediction_identity": identity.public_dict(),
+        },
         task_hash=task_hash,
     )
     with Session(engine, expire_on_commit=False) as db:
@@ -68,7 +98,7 @@ def insert_execution(
     is_synthetic: bool = False,
     integration_name: str = "evaluation-test-agent",
     provider: str = "anthropic",
-    provider_model: str = "claude-sonnet-5",
+    provider_model: str = "test-anthropic-model-a-v1",
     workspace_id: str = WORKSPACE_ID,
 ) -> dict:
     if workspace_id != WORKSPACE_ID:
@@ -80,6 +110,14 @@ def insert_execution(
             integration_version="1.2.3",
             provider=provider,
             exact_provider_model=provider_model,
+            identity_schema_version="citadel.prediction-identity.v1"
+            if prediction_id is not None
+            else None,
+            identity_status="resolved" if prediction_id is not None else "unlinked",
+            token_target_semantics=CLAUDE_TOKEN_TARGET_SEMANTICS
+            if prediction_id is not None
+            else None,
+            prediction_identity_hash=None,
             status="started",
             is_synthetic=is_synthetic,
             started_at=utc_now(),
@@ -108,7 +146,7 @@ def usage_request(
     input_tokens: int = 10,
     output_tokens: int = 5,
     provider: str = "anthropic",
-    provider_model: str = "claude-sonnet-5",
+    provider_model: str = "test-anthropic-model-a-v1",
     cache_creation_input_tokens: int | None = 0,
     cache_read_input_tokens: int | None = 0,
     source: str = "caller-supplied-source",
@@ -388,8 +426,9 @@ def test_multiple_executions_for_one_prediction_are_ambiguous(evaluation_databas
 def test_provider_and_exact_model_segments_do_not_mix_counter_definitions(
     evaluation_database,
 ):
-    for model in ("claude-sonnet-5", "claude-haiku-4"):
-        prediction = insert_prediction(evaluation_database)
+    models = ("test-anthropic-model-a-v1", "test-anthropic-model-b-v1")
+    for model in models:
+        prediction = insert_prediction(evaluation_database, provider_model=model)
         execution = insert_execution(
             evaluation_database, prediction.prediction_id, provider_model=model
         )
@@ -400,17 +439,21 @@ def test_provider_and_exact_model_segments_do_not_mix_counter_definitions(
         )
         finish_execution(evaluation_database, execution["execution_id"], expected_count=1)
 
-    unsupported_prediction = insert_prediction(evaluation_database)
+    unsupported_prediction = insert_prediction(
+        evaluation_database,
+        provider="openai",
+        provider_model="test-openai-model-v1",
+    )
     unsupported = insert_execution(
         evaluation_database,
         unsupported_prediction.prediction_id,
         provider="openai",
-        provider_model="gpt-5",
+        provider_model="test-openai-model-v1",
     )
     submit_usage(
         evaluation_database,
         unsupported["execution_id"],
-        usage_request(provider="openai", provider_model="gpt-5"),
+        usage_request(provider="openai", provider_model="test-openai-model-v1"),
     )
     finish_execution(evaluation_database, unsupported["execution_id"], expected_count=1)
 
@@ -419,27 +462,29 @@ def test_provider_and_exact_model_segments_do_not_mix_counter_definitions(
     assert report["eligible_completed_execution_count"] == 2
     assert {
         group["key"]["exact_provider_model"] for group in model_groups
-    } == {"claude-sonnet-5", "claude-haiku-4"}
+    } == set(models)
     assert all(group["sample_count"] == 1 for group in model_groups)
     assert report["excluded_execution_counts"]["unsupported_provider_token_semantics"] == 1
 
 
-def test_mixed_models_provider_mismatch_and_caller_source_label(evaluation_database):
+def test_usage_model_mismatch_and_caller_source_label(evaluation_database):
     prediction = insert_prediction(evaluation_database)
     execution = insert_execution(evaluation_database, prediction.prediction_id)
     submit_usage(
         evaluation_database,
         execution["execution_id"],
-        usage_request(provider_model="claude-sonnet-5"),
+        usage_request(provider_model="test-anthropic-model-a-v1"),
     )
-    submit_usage(
-        evaluation_database,
-        execution["execution_id"],
-        usage_request(provider_model="claude-sonnet-4", source="verified_provider"),
-    )
-    finish_execution(evaluation_database, execution["execution_id"], expected_count=2)
+    with pytest.raises(HTTPException) as model_mismatch:
+        submit_usage(
+            evaluation_database,
+            execution["execution_id"],
+            usage_request(provider_model="test-other-anthropic-model-v1"),
+        )
+    assert model_mismatch.value.status_code == 409
+    finish_execution(evaluation_database, execution["execution_id"], expected_count=1)
     report = summary(evaluation_database)
-    assert report["excluded_execution_counts"]["mixed_usage_models"] == 1
+    assert report["eligible_completed_execution_count"] == 1
     another_prediction = insert_prediction(evaluation_database)
     another = insert_execution(evaluation_database, another_prediction.prediction_id)
     with pytest.raises(HTTPException) as error:
@@ -460,7 +505,7 @@ def test_missing_anthropic_input_counter_is_excluded_instead_of_summed_as_zero(
     partial = CreateUsageEventRequest(
         event_id=uuid4(),
         provider="anthropic",
-        exact_provider_model="claude-sonnet-5",
+        exact_provider_model="test-anthropic-model-a-v1",
         provider_counters={"output_tokens": 5},
         source="incomplete-counter-set",
         occurred_at=datetime.now(UTC),
@@ -497,7 +542,11 @@ def test_workspace_isolation_and_legacy_unknown_provenance(evaluation_database):
         integration_name="legacy-integration",
         integration_version="0.1.0",
         provider="anthropic",
-        exact_provider_model="claude-sonnet-5",
+        exact_provider_model="test-anthropic-model-a-v1",
+        identity_schema_version=old_prediction.identity_schema_version,
+        identity_status=old_prediction.identity_status,
+        token_target_semantics=old_prediction.token_target_semantics,
+        prediction_identity_hash=old_prediction.prediction_identity_hash,
         status="completed",
         expected_usage_event_count=1,
         telemetry_provenance=None,
@@ -515,6 +564,10 @@ def test_workspace_isolation_and_legacy_unknown_provenance(evaluation_database):
                 workspace_id=WORKSPACE_ID,
                 provider=event.provider,
                 exact_provider_model=event.exact_provider_model,
+                identity_schema_version=old_prediction.identity_schema_version,
+                identity_status=old_prediction.identity_status,
+                token_target_semantics=old_prediction.token_target_semantics,
+                prediction_identity_hash=old_prediction.prediction_identity_hash,
                 input_tokens=event.input_tokens,
                 output_tokens=event.output_tokens,
                 cache_creation_input_tokens=event.cache_creation_input_tokens,
@@ -551,7 +604,7 @@ def test_workspace_isolation_and_legacy_unknown_provenance(evaluation_database):
         integration_name="other-workspace-agent",
         integration_version="1.0.0",
         provider="anthropic",
-        exact_provider_model="claude-sonnet-5",
+        exact_provider_model="test-anthropic-model-a-v1",
         status="completed",
         expected_usage_event_count=1,
         telemetry_provenance="verified_provider",
@@ -571,6 +624,10 @@ def test_workspace_isolation_and_legacy_unknown_provenance(evaluation_database):
                 workspace_id=other_execution.workspace_id,
                 provider="anthropic",
                 exact_provider_model=other_execution.exact_provider_model,
+                identity_schema_version=other_prediction.identity_schema_version,
+                identity_status=other_prediction.identity_status,
+                token_target_semantics=other_prediction.token_target_semantics,
+                prediction_identity_hash=other_prediction.prediction_identity_hash,
                 input_tokens=900,
                 output_tokens=900,
                 cache_creation_input_tokens=0,

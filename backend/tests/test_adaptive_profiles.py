@@ -24,12 +24,17 @@ from fastapi.security import HTTPAuthorizationCredentials
 from httpx import Response
 from main import app
 from pydantic import ValidationError
+from prediction_identity import (
+    CLAUDE_TOKEN_TARGET_SEMANTICS,
+    IDENTITY_STATUS_LEGACY_UNRESOLVED,
+    make_prediction_identity,
+)
 from sqlalchemy.orm import Session
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 API_KEY = "adaptive-profile-test-secret"
 WORKSPACE_ID = "adaptive-profile-test-workspace"
-EXACT_MODEL = "claude-sonnet-5-20251001"
+EXACT_MODEL = "test-anthropic-model-v1"
 
 
 @pytest.fixture
@@ -39,10 +44,28 @@ def adaptive_client(tmp_path, monkeypatch):
     monkeypatch.setenv("CITADEL_API_KEY", API_KEY)
     monkeypatch.setenv("CITADEL_EXECUTION_WORKSPACE_ID", WORKSPACE_ID)
     monkeypatch.setenv("CITADEL_TASK_HASH_KEY", "stable-test-hmac-key")
+    monkeypatch.setattr(adaptive_api, "_prediction_identity", _test_prediction_identity)
     command.upgrade(Config(str(BACKEND_DIR / "alembic.ini")), "head")
     engine = create_database_engine(database_url)
     yield engine
     engine.dispose()
+
+
+def _test_prediction_identity(payload):
+    artifact_digest = adaptive_api._artifact_digest("claude-sonnet")
+    assert artifact_digest is not None
+    artifact_sha256 = artifact_digest.removeprefix("sha256:")
+    status = "resolved" if payload.exact_provider_model else IDENTITY_STATUS_LEGACY_UNRESOLVED
+    return make_prediction_identity(
+        identity_status=status,
+        provider=payload.provider or "anthropic",
+        exact_provider_model=payload.exact_provider_model,
+        model_alias=payload.model_id,
+        token_target_semantics=CLAUDE_TOKEN_TARGET_SEMANTICS,
+        estimator_artifact_version=f"frozen-claude-sonnet-bundle@{artifact_digest}",
+        estimator_artifact_sha256=artifact_sha256,
+        pricing_schedule_version=None,
+    )
 
 
 def _insert_history(
@@ -61,8 +84,23 @@ def _insert_history(
     expected_event_count: int = 1,
     status: str = "completed",
 ) -> None:
-    artifact_version = artifact_version or adaptive_api._artifact_digest("claude-sonnet")
-    assert artifact_version is not None
+    artifact_digest = artifact_version or adaptive_api._artifact_digest("claude-sonnet")
+    assert artifact_digest is not None
+    artifact_sha256 = (
+        artifact_digest.removeprefix("sha256:")
+        if artifact_digest.startswith("sha256:") and len(artifact_digest) == 71
+        else hashlib.sha256(artifact_digest.encode()).hexdigest()
+    )
+    identity = make_prediction_identity(
+        identity_status="resolved",
+        provider="anthropic",
+        exact_provider_model=provider_model,
+        model_alias="claude-sonnet",
+        token_target_semantics=CLAUDE_TOKEN_TARGET_SEMANTICS,
+        estimator_artifact_version=f"frozen-claude-sonnet-bundle@{artifact_digest}",
+        estimator_artifact_sha256=artifact_sha256,
+        pricing_schedule_version=None,
+    )
     started_at = utc_now() - timedelta(days=age_days)
     with Session(engine) as db:
         for index in range(count):
@@ -83,7 +121,15 @@ def _insert_history(
                     workspace_id=workspace_id,
                     created_at=started_at,
                     model_alias="claude-sonnet",
-                    model_artifact_version=artifact_version,
+                    provider=identity.provider,
+                    exact_provider_model=identity.exact_provider_model,
+                    identity_schema_version=identity.identity_schema_version,
+                    identity_status=identity.identity_status,
+                    token_target_semantics=identity.token_target_semantics,
+                    estimator_artifact_version=identity.estimator_artifact_version,
+                    estimator_artifact_sha256=identity.estimator_artifact_sha256,
+                    prediction_identity_hash=identity.prediction_identity_hash,
+                    model_artifact_version=identity.estimator_artifact_version,
                     feature_schema_version="citadel-features-v1",
                     predicted_low_tokens=80,
                     predicted_expected_tokens=100,
@@ -92,7 +138,10 @@ def _insert_history(
                     estimated_expected_cost=None,
                     estimated_high_cost=None,
                     pricing_version=None,
-                    prediction_payload_snapshot={"response": {"expected_tokens": 100}},
+                    prediction_payload_snapshot={
+                        "response": {"expected_tokens": 100},
+                        "prediction_identity": identity.public_dict(),
+                    },
                     task_hash=task_hash,
                 )
             )
@@ -106,6 +155,10 @@ def _insert_history(
                     integration_version="1.0",
                     provider="anthropic",
                     exact_provider_model=provider_model,
+                    identity_schema_version=identity.identity_schema_version,
+                    identity_status=identity.identity_status,
+                    token_target_semantics=identity.token_target_semantics,
+                    prediction_identity_hash=identity.prediction_identity_hash,
                     status=status,
                     is_synthetic=(
                         provenance == "synthetic_benchmark"
@@ -126,6 +179,10 @@ def _insert_history(
                     workspace_id=workspace_id,
                     provider="anthropic",
                     exact_provider_model=provider_model,
+                    identity_schema_version=identity.identity_schema_version,
+                    identity_status=identity.identity_status,
+                    token_target_semantics=identity.token_target_semantics,
+                    prediction_identity_hash=identity.prediction_identity_hash,
                     input_tokens=actual,
                     output_tokens=0,
                     cache_creation_input_tokens=0,
@@ -347,7 +404,7 @@ def test_workspace_isolation_and_requested_model_workspace_cohort(
         engine,
         count=30,
         residual=-20,
-        provider_model="claude-sonnet-5-other",
+        provider_model="test-other-anthropic-model-v1",
     )
     fallback = _adaptive_request(engine)
     assert fallback.status_code == 201, fallback.text
@@ -381,7 +438,7 @@ def test_other_model_cannot_make_requested_model_sample_sufficient(
         engine,
         count=30,
         residual=-20,
-        provider_model="claude-sonnet-5-other",
+        provider_model="test-other-anthropic-model-v1",
     )
     monkeypatch.setattr(adaptive_api, "run_predict", lambda *_args, **_kwargs: _model_result())
 
@@ -405,19 +462,14 @@ def test_missing_or_ambiguous_exact_model_cannot_use_other_model_history(
         engine,
         count=30,
         residual=-20,
-        provider_model="claude-sonnet-5-other",
+        provider_model="test-other-anthropic-model-v1",
     )
     monkeypatch.setattr(adaptive_api, "run_predict", lambda *_args, **_kwargs: _model_result())
 
-    with pytest.raises(ValidationError):
-        AdaptivePredictionRequest.model_validate(
-            {
-                "task_text": "Review a bounded public topic.",
-                "tools": ["web_search"],
-                "model_id": "claude-sonnet",
-                "provider": "anthropic",
-            }
-        )
+    unresolved = _adaptive_request(engine, exact_provider_model=None)
+    assert unresolved.status_code == 201, unresolved.text
+    assert unresolved.json()["profile"]["status"] == "incompatible"
+    assert unresolved.json()["profile"]["fallback_reason"] == "prediction_identity_unresolved"
 
     ambiguous = _adaptive_request(engine, exact_provider_model="claude-sonnet")
     assert ambiguous.status_code == 201, ambiguous.text
@@ -432,7 +484,7 @@ def test_missing_or_ambiguous_exact_model_cannot_use_other_model_history(
 def test_exact_model_profile_uses_its_own_residuals(adaptive_client, monkeypatch):
     engine = adaptive_client
     _insert_history(engine, count=30, residual=20)
-    _insert_history(engine, count=30, residual=-20, provider_model="claude-sonnet-5-other")
+    _insert_history(engine, count=30, residual=-20, provider_model="test-other-anthropic-model-v1")
     monkeypatch.setattr(adaptive_api, "run_predict", lambda *_args, **_kwargs: _model_result())
     exact = _adaptive_request(engine)
     assert exact.status_code == 201, exact.text
@@ -513,17 +565,21 @@ def test_missing_task_hashes_cannot_activate_a_profile(adaptive_client, monkeypa
 def test_concurrent_profile_queries_are_read_only_and_deterministic(adaptive_client):
     engine = adaptive_client
     _insert_history(engine, count=30, residual=20)
-    artifact_version = adaptive_api._artifact_digest("claude-sonnet")
+    identity = _test_prediction_identity(
+        AdaptivePredictionRequest(
+            task_text="Test task",
+            model_id="claude-sonnet",
+            provider="anthropic",
+            exact_provider_model=EXACT_MODEL,
+        )
+    )
 
     def query_profile(_index: int):
         with Session(engine) as db:
             return get_adaptive_profile(
                 db,
                 workspace_id=WORKSPACE_ID,
-                provider="anthropic",
-                exact_provider_model=EXACT_MODEL,
-                model_alias="claude-sonnet",
-                model_artifact_version=artifact_version,
+                identity=identity,
                 low_tokens=90,
                 expected_tokens=100,
                 high_tokens=130,
@@ -561,14 +617,19 @@ def test_negative_residual_and_unsupported_hierarchy_metadata_fall_back_safely(
             exact_provider_model="other-model-v1",
         )
 
+    unsupported_identity = _test_prediction_identity(
+        AdaptivePredictionRequest(
+            task_text="Test task",
+            model_id="claude-sonnet",
+            provider="other-provider",
+            exact_provider_model="other-model-v1",
+        )
+    )
     with Session(engine) as db:
         unsupported_profile = get_adaptive_profile(
             db,
             workspace_id=WORKSPACE_ID,
-            provider="other-provider",
-            exact_provider_model="other-model-v1",
-            model_alias="claude-sonnet",
-            model_artifact_version=adaptive_api._artifact_digest("claude-sonnet"),
+            identity=unsupported_identity,
             low_tokens=90,
             expected_tokens=100,
             high_tokens=130,

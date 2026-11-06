@@ -43,6 +43,15 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
             for key in (
                 "prediction_id",
                 "model_alias",
+                "provider",
+                "exact_provider_model",
+                "identity_schema_version",
+                "identity_status",
+                "token_target_semantics",
+                "model_artifact_version",
+                "estimator_artifact_version",
+                "estimator_artifact_sha256",
+                "prediction_identity_hash",
                 "predicted_low_tokens",
                 "predicted_expected_tokens",
                 "predicted_high_tokens",
@@ -60,6 +69,10 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
         "integration_version": execution.get("integration_version"),
         "provider": execution.get("provider"),
         "exact_provider_model": execution.get("exact_provider_model"),
+        "identity_schema_version": execution.get("identity_schema_version"),
+        "identity_status": execution.get("identity_status"),
+        "token_target_semantics": execution.get("token_target_semantics"),
+        "prediction_identity_hash": execution.get("prediction_identity_hash"),
         "reasoning_effort": execution.get("reasoning_effort"),
         "started_at": execution.get("started_at"),
         "completed_at": execution.get("completed_at"),
@@ -312,7 +325,7 @@ def create_server() -> MCPServer:
         ),
     )
     def begin_execution(
-        exact_provider_model: str,
+        exact_provider_model: str | None = None,
         task_text: str | None = None,
         prediction_id: str | None = None,
         tools: list[str] | None = None,
@@ -327,8 +340,8 @@ def create_server() -> MCPServer:
         try:
             if (task_text is None) == (prediction_id is None):
                 raise ValueError("Provide exactly one of task_text or prediction_id.")
-            if not exact_provider_model.strip():
-                raise ValueError("exact_provider_model is required.")
+            if exact_provider_model is not None and not exact_provider_model.strip():
+                raise ValueError("exact_provider_model must not be blank when supplied.")
             if prediction_id is not None:
                 UUID(prediction_id)
             if task_text is not None and not task_text.strip():
@@ -365,7 +378,7 @@ def create_server() -> MCPServer:
     def record_execution_usage(
         execution_id: str,
         event_id: str,
-        exact_provider_model: str,
+        exact_provider_model: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         cache_creation_input_tokens: int | None = None,
@@ -395,8 +408,8 @@ def create_server() -> MCPServer:
                             "Provider counter names must be non-empty and at most 96 characters."
                         )
                     _validate_counter(f"provider_counters.{name}", value, nullable=True)
-            if not exact_provider_model.strip():
-                raise ValueError("exact_provider_model is required.")
+            if exact_provider_model is not None and not exact_provider_model.strip():
+                raise ValueError("exact_provider_model must not be blank when supplied.")
             if occurred_at is not None:
                 parsed = datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
                 if parsed.tzinfo is None or parsed.utcoffset() is None:

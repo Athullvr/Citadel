@@ -64,6 +64,10 @@ class PredictionRecord(Base):
     __tablename__ = "execution_predictions"
     __table_args__ = (
         UniqueConstraint("prediction_id", "workspace_id", name="uq_prediction_workspace"),
+        CheckConstraint(
+            "identity_status IN ('resolved', 'legacy_unresolved')",
+            name="ck_prediction_identity_status",
+        ),
         Index("ix_execution_predictions_workspace_created", "workspace_id", "created_at"),
     )
 
@@ -71,6 +75,16 @@ class PredictionRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     model_alias: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exact_provider_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    identity_schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    identity_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="legacy_unresolved", server_default="legacy_unresolved"
+    )
+    token_target_semantics: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    estimator_artifact_version: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    estimator_artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prediction_identity_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model_artifact_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     feature_schema_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     predicted_low_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -107,6 +121,10 @@ class ExecutionRecord(Base):
             name="ck_execution_status",
         ),
         CheckConstraint(
+            "identity_status IN ('resolved', 'legacy_unresolved', 'unlinked')",
+            name="ck_execution_identity_status",
+        ),
+        CheckConstraint(
             "expected_usage_event_count IS NULL OR expected_usage_event_count >= 0",
             name="ck_execution_expected_usage_event_count_nonnegative",
         ),
@@ -124,7 +142,13 @@ class ExecutionRecord(Base):
     integration_name: Mapped[str] = mapped_column(String(128), nullable=False)
     integration_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    exact_provider_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    exact_provider_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    identity_schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    identity_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unlinked", server_default="unlinked"
+    )
+    token_target_semantics: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prediction_identity_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="started")
     external_run_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     parent_execution_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
@@ -181,6 +205,10 @@ class UsageEvent(Base):
             "usage_completeness IN ('complete', 'incomplete', 'unknown')",
             name="ck_usage_event_completeness",
         ),
+        CheckConstraint(
+            "identity_status IN ('resolved', 'legacy_unresolved', 'unlinked')",
+            name="ck_usage_identity_status",
+        ),
         Index("ix_usage_events_workspace_execution", "workspace_id", "execution_id"),
     )
 
@@ -188,7 +216,13 @@ class UsageEvent(Base):
     execution_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    exact_provider_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    exact_provider_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    identity_schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    identity_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unlinked", server_default="unlinked"
+    )
+    token_target_semantics: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prediction_identity_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cache_creation_input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

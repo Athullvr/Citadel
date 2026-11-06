@@ -22,6 +22,12 @@ from execution_models import (
     PredictionRecord,
     UsageEvent,
 )
+from prediction_identity import (
+    IDENTITY_SCHEMA_VERSION,
+    IDENTITY_STATUS_RESOLVED,
+    prediction_identity_hash_from_record,
+    prediction_identity_matches_snapshot,
+)
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
@@ -59,6 +65,12 @@ class _EligibleRecord:
     task_hash: str | None
     model_alias: str
     model_artifact_version: str | None
+    estimator_artifact_version: str | None
+    estimator_artifact_sha256: str | None
+    identity_schema_version: str
+    identity_status: str
+    token_target_semantics: str
+    prediction_identity_hash: str
     provider: str
     exact_provider_model: str
     integration_name: str
@@ -196,13 +208,13 @@ def _group_report(
         "outcome": outcome,
         "key": key,
         "sample_count": len(records),
+        "execution_sample_count": len(records),
         "independent_task_count": independent_count,
         "task_hash_missing_count": unhashed_count,
         "reliability": reliability,
-        "production_accuracy_claim_eligible": (
-            provenance == TELEMETRY_PROVENANCE_VERIFIED_PROVIDER
-            and reliability == "provisional"
-        ),
+        "production_accuracy_claim_eligible": False,
+        "accuracy_claim_status": "descriptive_only_no_independent_holdout",
+        "coverage_interpretation": "descriptive_on_evaluation_executions",
         "metrics": metrics,
         "cache_usage": _cache_statistics(records),
     }
@@ -291,6 +303,32 @@ def load_evaluation_dataset(
                 "usage_model_count"
             ),
             func.min(UsageEvent.exact_provider_model).label("usage_exact_provider_model"),
+            func.count(func.distinct(UsageEvent.identity_status)).label(
+                "usage_identity_status_count"
+            ),
+            func.min(UsageEvent.identity_status).label("usage_identity_status"),
+            func.count(UsageEvent.identity_status).label("usage_identity_status_event_count"),
+            func.count(func.distinct(UsageEvent.identity_schema_version)).label(
+                "usage_identity_schema_count"
+            ),
+            func.min(UsageEvent.identity_schema_version).label("usage_identity_schema_version"),
+            func.count(UsageEvent.identity_schema_version).label(
+                "usage_identity_schema_event_count"
+            ),
+            func.count(func.distinct(UsageEvent.token_target_semantics)).label(
+                "usage_target_semantics_count"
+            ),
+            func.min(UsageEvent.token_target_semantics).label("usage_target_semantics"),
+            func.count(UsageEvent.token_target_semantics).label(
+                "usage_target_semantics_event_count"
+            ),
+            func.count(func.distinct(UsageEvent.prediction_identity_hash)).label(
+                "usage_identity_hash_count"
+            ),
+            func.min(UsageEvent.prediction_identity_hash).label("usage_identity_hash"),
+            func.count(UsageEvent.prediction_identity_hash).label(
+                "usage_identity_hash_event_count"
+            ),
         )
         .where(UsageEvent.workspace_id == workspace_id)
         .group_by(UsageEvent.workspace_id, UsageEvent.execution_id)
@@ -327,6 +365,18 @@ def load_evaluation_dataset(
             usage.c.usage_provider,
             usage.c.usage_model_count,
             usage.c.usage_exact_provider_model,
+            usage.c.usage_identity_status_count,
+            usage.c.usage_identity_status,
+            usage.c.usage_identity_status_event_count,
+            usage.c.usage_identity_schema_count,
+            usage.c.usage_identity_schema_version,
+            usage.c.usage_identity_schema_event_count,
+            usage.c.usage_target_semantics_count,
+            usage.c.usage_target_semantics,
+            usage.c.usage_target_semantics_event_count,
+            usage.c.usage_identity_hash_count,
+            usage.c.usage_identity_hash,
+            usage.c.usage_identity_hash_event_count,
             prediction_links.c.execution_count,
         )
         .outerjoin(
@@ -391,6 +441,11 @@ def load_evaluation_dataset(
         provenance_counts[provenance] += 1
         completeness = _completeness(execution.expected_usage_event_count, event_count)
         completeness_counts[completeness] += 1
+        snapshot_identity = (
+            prediction.prediction_payload_snapshot.get("prediction_identity")
+            if prediction is not None
+            else None
+        )
 
         reason: str | None = None
         if execution.status == "started":
@@ -401,6 +456,37 @@ def load_evaluation_dataset(
             reason = "prediction_missing"
         elif int(row.execution_count or 0) != 1:
             reason = "prediction_has_multiple_executions"
+        elif prediction.identity_status != IDENTITY_STATUS_RESOLVED:
+            reason = "prediction_identity_unresolved"
+        elif (
+            prediction.identity_schema_version != IDENTITY_SCHEMA_VERSION
+            or not prediction.provider
+            or not prediction.exact_provider_model
+            or not prediction.token_target_semantics
+            or not prediction.model_artifact_version
+            or not prediction.estimator_artifact_version
+            or not prediction.estimator_artifact_sha256
+            or not prediction.prediction_identity_hash
+        ):
+            reason = "prediction_identity_incomplete"
+        elif (
+            prediction_identity_hash_from_record(prediction)
+            != prediction.prediction_identity_hash
+            or not prediction_identity_matches_snapshot(prediction, snapshot_identity)
+        ):
+            reason = "prediction_identity_hash_invalid"
+        elif execution.identity_status != prediction.identity_status:
+            reason = "execution_prediction_identity_status_mismatch"
+        elif execution.identity_schema_version != prediction.identity_schema_version:
+            reason = "execution_prediction_identity_version_mismatch"
+        elif execution.prediction_identity_hash != prediction.prediction_identity_hash:
+            reason = "execution_prediction_identity_mismatch"
+        elif execution.provider != prediction.provider:
+            reason = "prediction_execution_provider_mismatch"
+        elif execution.exact_provider_model != prediction.exact_provider_model:
+            reason = "prediction_execution_model_mismatch"
+        elif execution.token_target_semantics != prediction.token_target_semantics:
+            reason = "prediction_execution_token_target_mismatch"
         elif completeness == "unknown":
             reason = "telemetry_completeness_unknown"
         elif completeness == "incomplete":
@@ -413,6 +499,36 @@ def load_evaluation_dataset(
             reason = "mixed_usage_models"
         elif row.usage_exact_provider_model != execution.exact_provider_model:
             reason = "usage_model_mismatch"
+        elif row.usage_identity_status_event_count != event_count:
+            reason = "usage_identity_status_missing"
+        elif (
+            row.usage_identity_status_count != 1
+            or row.usage_identity_status != execution.identity_status
+        ):
+            reason = "usage_identity_status_mismatch"
+        elif row.usage_identity_schema_event_count != event_count:
+            reason = "usage_identity_version_missing"
+        elif (
+            row.usage_identity_schema_count != 1
+            or row.usage_identity_schema_version != execution.identity_schema_version
+        ):
+            reason = "usage_identity_version_mismatch"
+        elif row.usage_target_semantics_event_count != event_count:
+            reason = "usage_token_target_missing"
+        elif (
+            row.usage_target_semantics_count != 1
+            or row.usage_target_semantics != execution.token_target_semantics
+        ):
+            reason = "usage_token_target_mismatch"
+        elif row.usage_identity_hash_event_count != event_count:
+            reason = "usage_prediction_identity_missing"
+        elif (
+            row.usage_identity_hash_count != 1
+            or row.usage_identity_hash != prediction.prediction_identity_hash
+        ):
+            reason = "usage_prediction_identity_mismatch"
+        elif execution.exact_provider_model is None:
+            reason = "exact_provider_model_unresolved"
         elif execution.provider != "anthropic":
             reason = "unsupported_provider_token_semantics"
         elif prediction.model_alias != "claude-sonnet":
@@ -452,6 +568,12 @@ def load_evaluation_dataset(
             task_hash=prediction.task_hash,
             model_alias=prediction.model_alias,
             model_artifact_version=prediction.model_artifact_version,
+            estimator_artifact_version=prediction.estimator_artifact_version,
+            estimator_artifact_sha256=prediction.estimator_artifact_sha256,
+            identity_schema_version=prediction.identity_schema_version,
+            identity_status=prediction.identity_status,
+            token_target_semantics=prediction.token_target_semantics,
+            prediction_identity_hash=prediction.prediction_identity_hash,
             provider=execution.provider,
             exact_provider_model=execution.exact_provider_model,
             integration_name=execution.integration_name,
@@ -524,7 +646,10 @@ def get_evaluation_summary(
     return {
         "evaluation_status": "available" if completed_records or failed_records else "unavailable",
         "methodology_version": METHODOLOGY_VERSION,
-        "evaluation_unit": "one prediction linked to exactly one terminal execution",
+        "evaluation_unit": (
+            "one prediction linked to exactly one terminal execution; metrics are "
+            "execution-level and independent_task_count uses distinct HMAC task hashes"
+        ),
         "primary_token_target": {
             "id": PRIMARY_TOKEN_TARGET,
             "description": (
@@ -563,7 +688,19 @@ def get_evaluation_summary(
             "integration_name": filters.integration_name,
             "integration_version": filters.integration_version,
         },
-        "production_accuracy_claim_eligible": any(
-            group["production_accuracy_claim_eligible"] for group in provenance_reports
-        ),
+        "statistical_reporting": {
+            "metric_sample_unit": "execution",
+            "independent_sample_unit": "distinct_hmac_task_hash",
+            "repeated_executions": (
+                "included in execution metrics; collapsed for independent task counts"
+            ),
+            "coverage_interpretation": (
+                "descriptive only; evaluation records are not an independent interval holdout"
+            ),
+            "confidence_labels": "heuristic labels, not calibrated probabilities",
+            "point_estimate_validation": (
+                "leave-one-task-out; all runs for a held-out task are excluded from training"
+            ),
+        },
+        "production_accuracy_claim_eligible": False,
     }

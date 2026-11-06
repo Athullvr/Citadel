@@ -11,9 +11,10 @@ from api_schemas import PredictResponse
 from database import get_db
 from execution_feedback import (
     CreatePredictionRequest,
+    PredictionIdentityResponse,
     StoredPredictionResponse,
-    _artifact_digest,
     _http_responses,
+    _prediction_identity,
     configured_workspace_id,
     persist_prediction_snapshot,
     require_execution_auth,
@@ -21,23 +22,18 @@ from execution_feedback import (
 from fastapi import APIRouter, Depends, HTTPException, status
 from predict import SUPPORTED_MODELS
 from predict import predict as run_predict
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/predictions", tags=["adaptive prediction"])
 
 
 class AdaptivePredictionRequest(CreatePredictionRequest):
-    provider: str = Field(min_length=1, max_length=64)
-    exact_provider_model: str = Field(min_length=1, max_length=128)
+    """A prediction request with optional runtime identity observations.
 
-    @field_validator("provider", "exact_provider_model")
-    @classmethod
-    def require_nonblank_identity(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("provider and exact_provider_model must not be blank")
-        return normalized
+    The estimator registry, rather than caller-supplied model strings, defines
+    the immutable prediction identity.
+    """
 
 
 class PublicPredictionResponse(BaseModel):
@@ -57,6 +53,7 @@ class PublicPredictionResponse(BaseModel):
     ood_reasons: list[str]
     prediction_id: UUID
     created_at: datetime
+    identity: PredictionIdentityResponse
 
 
 class AdjustedTokenEstimate(BaseModel):
@@ -117,14 +114,11 @@ def create_adaptive_prediction(
 
     result = run_predict(payload.task_text, payload.tools, model_id=payload.model_id)
     original = PredictResponse.model_validate(result)
-    artifact_version = _artifact_digest(payload.model_id)
+    identity = _prediction_identity(payload)
     profile = get_adaptive_profile(
         db,
         workspace_id=workspace_id,
-        provider=payload.provider,
-        exact_provider_model=payload.exact_provider_model,
-        model_alias=payload.model_id,
-        model_artifact_version=artifact_version,
+        identity=identity,
         low_tokens=original.low_tokens,
         expected_tokens=original.expected_tokens,
         high_tokens=original.high_tokens,
@@ -144,6 +138,7 @@ def create_adaptive_prediction(
         result,
         workspace_id=workspace_id,
         db=db,
+        identity=identity,
         profile_adjustment=profile,
         adjusted_prediction=adjusted,
     )

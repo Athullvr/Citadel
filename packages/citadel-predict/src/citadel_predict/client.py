@@ -274,8 +274,8 @@ class CitadelClient:
         self,
         task_text: str,
         *,
-        provider: str,
-        exact_provider_model: str,
+        provider: str = "anthropic",
+        exact_provider_model: str | None = None,
         tools: list[str] | None = None,
         model_id: str = "claude-sonnet",
     ) -> dict[str, Any]:
@@ -300,7 +300,7 @@ class CitadelClient:
         integration_name: str,
         integration_version: str | None,
         provider: str,
-        exact_provider_model: str,
+        exact_provider_model: str | None = None,
         reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """Register a new execution under the configured workspace."""
@@ -330,7 +330,7 @@ class CitadelClient:
         integration_name: str = "citadel-predict-sdk",
         integration_version: str | None = None,
         provider: str = "anthropic",
-        exact_provider_model: str,
+        exact_provider_model: str | None = None,
         use_adaptive_profile: bool = False,
         reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
@@ -383,7 +383,7 @@ class CitadelClient:
         *,
         event_id: str,
         provider: str,
-        exact_provider_model: str,
+        exact_provider_model: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         cache_creation_input_tokens: int | None = None,

@@ -15,6 +15,7 @@ from evaluation_service import (
     load_evaluation_dataset,
 )
 from execution_models import TELEMETRY_PROVENANCE_VERIFIED_PROVIDER
+from prediction_identity import IDENTITY_STATUS_RESOLVED, PredictionIdentity
 from sqlalchemy.orm import Session
 
 PROFILE_METHODOLOGY_VERSION = "citadel-adaptive-profile-v1"
@@ -102,28 +103,39 @@ def _empty_cohort(
 def _cohort_for_records(
     records: list[_EligibleRecord],
     *,
-    expected_artifact_version: str,
-    exact_provider_model: str,
+    identity: PredictionIdentity,
 ) -> _Cohort:
-    scoped_records = [
+    candidates = [
         record
         for record in records
-        if record.exact_provider_model == exact_provider_model
+        if record.identity_status == IDENTITY_STATUS_RESOLVED
+        and record.provider == identity.provider
+        and record.exact_provider_model == identity.exact_provider_model
+        and record.token_target_semantics == identity.token_target_semantics
+        and record.model_alias == identity.model_alias
     ]
-    provenance = Counter(record.provenance for record in scoped_records)
+    provenance = Counter(record.provenance for record in candidates)
     exclusions: Counter[str] = Counter()
     task_residuals: dict[str, list[float]] = defaultdict(list)
     compatible_execution_count = 0
+    identity_compatible_records: list[_EligibleRecord] = []
 
-    for record in scoped_records:
+    for record in candidates:
+        if (
+            record.estimator_artifact_version != identity.estimator_artifact_version
+            or record.estimator_artifact_sha256 != identity.estimator_artifact_sha256
+        ):
+            exclusions["prediction_artifact_mismatch"] += 1
+            continue
+        if record.prediction_identity_hash != identity.prediction_identity_hash:
+            exclusions["prediction_identity_mismatch"] += 1
+            continue
+        identity_compatible_records.append(record)
         if record.is_synthetic:
             exclusions["is_synthetic"] += 1
             continue
         if record.provenance != TELEMETRY_PROVENANCE_VERIFIED_PROVIDER:
             exclusions[f"provenance_{record.provenance}"] += 1
-            continue
-        if record.model_artifact_version != expected_artifact_version:
-            exclusions["prediction_artifact_mismatch"] += 1
             continue
         if record.task_hash is None:
             exclusions["task_hash_missing"] += 1
@@ -140,17 +152,25 @@ def _cohort_for_records(
     independent_count = len(independent_residuals)
     repeats_collapsed = compatible_execution_count - independent_count
     reason: str | None
-    if not scoped_records:
+    if not candidates:
         return _empty_cohort("unavailable", "no_evaluator_eligible_history")
+    if not identity_compatible_records:
+        reason = (
+            "prediction_artifact_mismatch"
+            if exclusions.get("prediction_artifact_mismatch")
+            else "prediction_identity_mismatch"
+        )
+        cohort = _empty_cohort("incompatible", reason, exclusions=exclusions, provenance=provenance)
+        return cohort
     if not independent_count:
         verified_records = [
             record
-            for record in scoped_records
+            for record in identity_compatible_records
             if record.provenance == TELEMETRY_PROVENANCE_VERIFIED_PROVIDER
             and not record.is_synthetic
         ]
         has_matching_artifact = any(
-            record.model_artifact_version == expected_artifact_version
+            record.estimator_artifact_version == identity.estimator_artifact_version
             for record in verified_records
         )
         status = (
@@ -310,10 +330,7 @@ def get_adaptive_profile(
     db: Session,
     *,
     workspace_id: str,
-    provider: str,
-    exact_provider_model: str,
-    model_alias: str,
-    model_artifact_version: str | None,
+    identity: PredictionIdentity,
     low_tokens: int,
     expected_tokens: int,
     high_tokens: int,
@@ -324,22 +341,26 @@ def get_adaptive_profile(
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
         raise ValueError("evaluated_at must include a timezone")
     evaluated_at = evaluated_at.astimezone(UTC)
+    if identity.identity_status != IDENTITY_STATUS_RESOLVED:
+        return _profile_status_without_query(
+            "prediction_identity_unresolved", evaluated_at=evaluated_at
+        )
+    if identity.provider != SUPPORTED_PROVIDER:
+        return _profile_status_without_query(
+            "unsupported_provider_token_semantics", evaluated_at=evaluated_at
+        )
+    if identity.model_alias != SUPPORTED_PREDICTION_MODEL:
+        return _profile_status_without_query(
+            "unsupported_prediction_model", evaluated_at=evaluated_at
+        )
     if (
-        not exact_provider_model.strip()
-        or exact_provider_model == model_alias
+        not identity.exact_provider_model
+        or identity.exact_provider_model == identity.model_alias
     ):
         return _profile_status_without_query(
             "exact_provider_model_missing_or_ambiguous", evaluated_at=evaluated_at
         )
-    if provider != SUPPORTED_PROVIDER:
-        return _profile_status_without_query(
-            "unsupported_provider_token_semantics", evaluated_at=evaluated_at
-        )
-    if model_alias != SUPPORTED_PREDICTION_MODEL:
-        return _profile_status_without_query(
-            "unsupported_prediction_model", evaluated_at=evaluated_at
-        )
-    if not model_artifact_version:
+    if not identity.estimator_artifact_version or not identity.estimator_artifact_sha256:
         return _profile_status_without_query(
             "prediction_artifact_unavailable", evaluated_at=evaluated_at
         )
@@ -357,8 +378,9 @@ def get_adaptive_profile(
         filters=EvaluationFilters(
             start_at=cutoff,
             end_at=evaluated_at,
-            model_alias=model_alias,
-            provider=provider,
+            model_alias=identity.model_alias,
+            provider=identity.provider,
+            exact_provider_model=identity.exact_provider_model,
         ),
     )
     historical_data = load_evaluation_dataset(
@@ -366,30 +388,27 @@ def get_adaptive_profile(
         workspace_id=workspace_id,
         filters=EvaluationFilters(
             end_at=cutoff,
-            model_alias=model_alias,
-            provider=provider,
+            model_alias=identity.model_alias,
+            provider=identity.provider,
+            exact_provider_model=identity.exact_provider_model,
         ),
     )
 
     workspace_recent = _cohort_for_records(
         recent_data.completed_records,
-        expected_artifact_version=model_artifact_version,
-        exact_provider_model=exact_provider_model,
+        identity=identity,
     )
     workspace_historical = _cohort_for_records(
         historical_data.completed_records,
-        expected_artifact_version=model_artifact_version,
-        exact_provider_model=exact_provider_model,
+        identity=identity,
     )
     model_recent = _cohort_for_records(
         recent_data.completed_records,
-        expected_artifact_version=model_artifact_version,
-        exact_provider_model=exact_provider_model,
+        identity=identity,
     )
     model_historical = _cohort_for_records(
         historical_data.completed_records,
-        expected_artifact_version=model_artifact_version,
-        exact_provider_model=exact_provider_model,
+        identity=identity,
     )
     workspace = _with_stale_fallback(workspace_recent, workspace_historical)
     provider_model = _with_stale_fallback(model_recent, model_historical)

@@ -56,16 +56,18 @@ def test_tool_registration(mcp_server):
         schemas = {
             tool.name: getattr(tool, "input_schema", None) or tool.inputSchema for tool in tools
         }
-        assert "exact_provider_model" in schemas["begin_execution"]["required"]
+        assert "exact_provider_model" not in schemas["begin_execution"]["required"]
+        assert "exact_provider_model" in schemas["begin_execution"]["properties"]
         assert {"task_text", "prediction_id"} <= set(
             schemas["begin_execution"]["properties"]
         )
         assert "use_adaptive_profile" in schemas["begin_execution"]["properties"]
         assert "use_adaptive_profile" not in schemas["begin_execution"]["required"]
         assert "workspace_id" not in schemas["begin_execution"]["properties"]
-        assert {"execution_id", "event_id", "exact_provider_model"} <= set(
+        assert {"execution_id", "event_id"} <= set(
             schemas["record_execution_usage"]["required"]
         )
+        assert "exact_provider_model" not in schemas["record_execution_usage"]["required"]
         assert "input_tokens" not in schemas["record_execution_usage"]["required"]
         assert "provider_counters" in schemas["record_execution_usage"]["properties"]
         assert "reasoning_effort" in schemas["begin_execution"]["properties"]
@@ -89,7 +91,7 @@ class _FakeExecutionClient:
             "integration_name": "mcp-agent",
             "integration_version": "1.0",
             "provider": "anthropic",
-            "exact_provider_model": "claude-sonnet-5",
+            "exact_provider_model": "test-anthropic-model-v1",
             "started_at": "2026-11-05T00:00:00Z",
             "completed_at": None,
             "telemetry_provenance": "unverified_submitted",
@@ -167,7 +169,7 @@ def test_begin_execution_creates_prediction_and_returns_safe_summary(mcp_server)
                 "begin_execution",
                 {
                     "task_text": "Do a private task",
-                    "exact_provider_model": "claude-sonnet-5",
+                    "exact_provider_model": "test-anthropic-model-v1",
                     "integration_name": "mcp-agent",
                 },
             )
@@ -221,7 +223,7 @@ def test_begin_execution_can_use_existing_prediction_reference(mcp_server):
                 "begin_execution",
                 {
                     "prediction_id": _FakeExecutionClient.detail["prediction"]["prediction_id"],
-                    "exact_provider_model": "claude-sonnet-5",
+                    "exact_provider_model": "test-anthropic-model-v1",
                 },
             )
         data = _tool_json(result)
@@ -253,7 +255,7 @@ def test_begin_execution_can_return_safe_adaptive_profile_summary(mcp_server):
                 "begin_execution",
                 {
                     "task_text": "Review a public release",
-                    "exact_provider_model": "claude-sonnet-5",
+                    "exact_provider_model": "test-anthropic-model-v1",
                     "use_adaptive_profile": True,
                 },
             )
@@ -303,7 +305,7 @@ def test_execution_tools_validate_provider_counters_and_completion(mcp_server):
             {
                 "execution_id": _FakeExecutionClient.detail["execution"]["execution_id"],
                 "event_id": "c115e9ac-d80b-4e31-b497-96cc1a85a8b0",
-                "exact_provider_model": "claude-sonnet-5",
+                "exact_provider_model": "test-anthropic-model-v1",
                 "input_tokens": -1,
                 "output_tokens": 3,
             },

@@ -24,7 +24,7 @@ def fake_response(response_id: str, input_tokens: int, output_tokens: int, **usa
     usage = SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens, **usage_fields)
     return SimpleNamespace(
         id=response_id,
-        model="claude-sonnet-5-20251001",
+        model="provider-reported-test-model-v1",
         usage=usage,
         content=[],
         stop_reason="end_turn",
@@ -90,7 +90,7 @@ def test_telemetry_uses_stable_event_id_and_provider_reported_fields(monkeypatch
     assert calls[0][0] == f"/api/executions/{execution_id}/usage"
     assert calls[0][1]["event_id"] == calls[1][1]["event_id"]
     assert calls[0][1]["provider"] == "anthropic"
-    assert calls[0][1]["exact_provider_model"] == "claude-sonnet-5-20251001"
+    assert calls[0][1].get("exact_provider_model") is None
     assert calls[0][1]["input_tokens"] == 10
     assert calls[0][1]["output_tokens"] == 4
     assert calls[0][1]["cache_creation_input_tokens"] == 3
@@ -112,12 +112,12 @@ def test_telemetry_marks_benchmark_execution_synthetic(monkeypatch):
     monkeypatch.setattr(telemetry, "_post", fake_post)
     execution = telemetry.start_execution(
         {"text": "Synthetic benchmark task", "tools": ["calculator"]},
-        "claude-sonnet-5",
+        "test-requested-model-v1",
     )
     telemetry.close()
 
     assert execution.prediction_id == UUID(prediction_id)
     assert execution.execution_id == UUID(execution_id)
     assert calls[0][1]["model_id"] == "claude-sonnet"
-    assert calls[1][1]["exact_provider_model"] == "claude-sonnet-5"
+    assert calls[1][1].get("exact_provider_model") is None
     assert calls[1][1]["is_synthetic"] is True

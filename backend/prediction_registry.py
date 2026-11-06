@@ -43,7 +43,7 @@ LEGACY_CLAUDE_ESTIMATOR = PredictionRegistration(
     friendly_alias="Claude Sonnet (legacy calibrated estimator)",
     estimator_id="frozen-claude-sonnet-bundle",
     estimator_status="calibrated",
-    artifact_version="resolved-at-runtime-sha256",
+    artifact_version=None,
     pricing_version=None,
     description=(
         "Existing frozen Claude Sonnet estimator alias. The repository does not map this "
@@ -87,7 +87,13 @@ def validate_prediction_request(
     provider: str | None = None,
     exact_provider_model: str | None = None,
 ) -> PredictionRegistration:
-    """Return a compatible calibrated estimator or fail without fallback."""
+    """Return a compatible calibrated estimator or fail without fallback.
+
+    The legacy Claude alias has no exact model binding. A caller may submit the
+    observed runtime model for telemetry compatibility, but it is never adopted
+    as the estimator identity. New registrations with an exact model must match
+    that model exactly.
+    """
     registration = resolve_prediction_registration(model_id)
     if registration is None:
         raise ValueError(f"Unsupported model_id '{model_id}'.")
@@ -95,13 +101,23 @@ def validate_prediction_request(
         raise ValueError(
             f"Model '{model_id}' is registered but has no compatible calibrated estimator."
         )
-    if (provider is None) != (exact_provider_model is None):
-        raise ValueError("provider and exact_provider_model must be supplied together.")
     if provider is not None and registration.provider != provider.strip().lower():
         raise ValueError(
             f"Estimator '{model_id}' is not compatible with provider '{provider}'."
         )
-    if provider is not None and exact_provider_model is not None:
+    if exact_provider_model is not None and provider is None:
+        raise ValueError("provider is required when exact_provider_model is supplied.")
+    if registration.exact_provider_model is not None:
+        if exact_provider_model is not None and (
+            exact_provider_model != registration.exact_provider_model
+        ):
+            raise ValueError(
+                f"Estimator '{model_id}' is bound to exact model "
+                f"'{registration.exact_provider_model}'."
+            )
+    elif exact_provider_model is not None and provider is not None:
+        # Keep the historical telemetry request shape. This is an observation,
+        # not a claim that the frozen estimator is calibrated for that model.
         validate_provider_model_identity(provider, exact_provider_model)
     return registration
 
