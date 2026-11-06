@@ -56,19 +56,21 @@ def test_tool_registration(mcp_server):
         schemas = {
             tool.name: getattr(tool, "input_schema", None) or tool.inputSchema for tool in tools
         }
-        assert "exact_provider_model" not in schemas["begin_execution"]["required"]
+        begin_required = schemas["begin_execution"].get("required", [])
+        assert "exact_provider_model" not in begin_required
         assert "exact_provider_model" in schemas["begin_execution"]["properties"]
         assert {"task_text", "prediction_id"} <= set(
             schemas["begin_execution"]["properties"]
         )
         assert "use_adaptive_profile" in schemas["begin_execution"]["properties"]
-        assert "use_adaptive_profile" not in schemas["begin_execution"]["required"]
+        assert "use_adaptive_profile" not in begin_required
         assert "workspace_id" not in schemas["begin_execution"]["properties"]
         assert {"execution_id", "event_id"} <= set(
             schemas["record_execution_usage"]["required"]
         )
-        assert "exact_provider_model" not in schemas["record_execution_usage"]["required"]
-        assert "input_tokens" not in schemas["record_execution_usage"]["required"]
+        usage_required = schemas["record_execution_usage"].get("required", [])
+        assert "exact_provider_model" not in usage_required
+        assert "input_tokens" not in usage_required
         assert "provider_counters" in schemas["record_execution_usage"]["properties"]
         assert "reasoning_effort" in schemas["begin_execution"]["properties"]
         assert "source" not in schemas["record_execution_usage"]["properties"]
@@ -401,7 +403,8 @@ def test_estimate_agent_cost_success(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             return_value=mock_prediction,
         ) as mock_predict:
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {
                     "task_text": "Audit repository and draft report",
@@ -442,7 +445,8 @@ def test_auth_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelAuthError("Invalid API key"),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Analyze data"},
             )
@@ -460,7 +464,8 @@ def test_rate_limit_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelRateLimitError("Rate limited", retry_after=45),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Analyze data"},
             )
@@ -479,7 +484,8 @@ def test_validation_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelValidationError("task_text exceeds maximum length"),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "A" * 5000},
             )
@@ -497,7 +503,8 @@ def test_bad_request_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelBadRequestError("Unsupported model id"),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Task", "model_id": "unsupported-model"},
             )
@@ -515,7 +522,8 @@ def test_server_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelServerError("Internal database failure", status_code=500),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Task"},
             )
@@ -533,7 +541,8 @@ def test_network_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelNetworkError("ConnectTimeout"),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Task"},
             )
@@ -551,7 +560,8 @@ def test_generic_citadel_error_translation(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=CitadelError("Generic client failure"),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Task"},
             )
@@ -569,7 +579,8 @@ def test_unexpected_exception_handling(mcp_server):
             "citadel_predict_mcp.server.predict_cost",
             side_effect=RuntimeError("Unexpected OS crash"),
         ):
-            result = await mcp_server.call_tool(
+            result = await _invoke_registered_handler(
+                mcp_server,
                 "estimate_agent_cost",
                 {"task_text": "Task"},
             )

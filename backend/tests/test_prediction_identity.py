@@ -192,7 +192,9 @@ def test_new_prediction_persists_legacy_identity_and_unchanged_claude_api(
 
     monkeypatch.setattr(main, "run_predict", lambda *_args, **_kwargs: result)
 
-    route = next(route for route in main.app.routes if getattr(route, "path", None) == "/api/predict")
+    route = next(
+        route for route in main.app.routes if getattr(route, "path", None) == "/api/predict"
+    )
     legacy_response = route.endpoint.__wrapped__(
         None,
         PredictRequest(task_text="legacy request", tools=["web_search"]),
@@ -303,29 +305,37 @@ def test_legacy_unresolved_is_ineligible_and_workspace_is_server_scoped(
             )
         assert not_found.value.status_code == 404
         monkeypatch.setenv("CITADEL_EXECUTION_WORKSPACE_ID", WORKSPACE_ID)
+        db.rollback()
 
-        execution_id = uuid4()
+        with Session(identity_database) as identity_db:
+            with pytest.raises(HTTPException) as identity_override:
+                create_execution(
+                    payload=_execution_request(prediction.prediction_id),
+                    _auth=None,
+                    db=identity_db,
+                )
+        assert identity_override.value.status_code == 409
+        assert "prediction_identity_unresolved" in str(identity_override.value.detail)
+
+        with Session(identity_database) as identity_db:
+            execution_record = create_execution(
+                payload=_execution_request(prediction.prediction_id, exact_model=None),
+                _auth=None,
+                db=identity_db,
+            )
+        assert execution_record.identity_status == IDENTITY_STATUS_LEGACY_UNRESOLVED
+        assert execution_record.exact_provider_model is None
+
+        execution_id = execution_record.execution_id
         event_id = uuid4()
         started_at = utc_now() - timedelta(minutes=2)
-        db.add(
-            ExecutionRecord(
-                execution_id=execution_id,
-                prediction_id=prediction.prediction_id,
-                workspace_id=WORKSPACE_ID,
-                integration_name="legacy-identity-test",
-                provider="anthropic",
-                exact_provider_model=None,
-                identity_schema_version=prediction.identity_schema_version,
-                identity_status=prediction.identity_status,
-                token_target_semantics=prediction.token_target_semantics,
-                prediction_identity_hash=prediction.prediction_identity_hash,
-                status="completed",
-                expected_usage_event_count=1,
-                telemetry_provenance="unverified_submitted",
-                started_at=started_at,
-                completed_at=started_at + timedelta(minutes=1),
-            )
-        )
+        linked_execution = db.get(ExecutionRecord, execution_id)
+        assert linked_execution is not None
+        linked_execution.status = "completed"
+        linked_execution.expected_usage_event_count = 1
+        linked_execution.telemetry_provenance = "unverified_submitted"
+        linked_execution.started_at = started_at
+        linked_execution.completed_at = started_at + timedelta(minutes=1)
         db.flush()
         db.add(
             UsageEvent(

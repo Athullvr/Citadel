@@ -35,6 +35,7 @@ from prediction_identity import (
     IDENTITY_STATUS_LEGACY_UNRESOLVED,
     IDENTITY_STATUS_RESOLVED,
     PredictionIdentity,
+    PredictionIdentityStatus,
     make_prediction_identity,
     prediction_identity_hash_from_record,
     prediction_identity_matches_snapshot,
@@ -451,10 +452,10 @@ def _prediction_identity(
             detail="The estimator artifact checksum is invalid.",
         )
     pricing_version, _ = _prediction_assumptions(payload.model_id)
-    identity_status = (
-        IDENTITY_STATUS_RESOLVED
+    identity_status: PredictionIdentityStatus = (
+        "resolved"
         if registration.exact_provider_model is not None
-        else IDENTITY_STATUS_LEGACY_UNRESOLVED
+        else "legacy_unresolved"
     )
     if registration.provider != "anthropic":
         raise HTTPException(
@@ -702,6 +703,14 @@ def create_execution(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="prediction_identity_unresolved: prediction identity is not usable.",
+                )
+            elif payload.exact_provider_model is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "prediction_identity_unresolved: an exact provider model cannot be "
+                        "attached to a legacy-unresolved prediction."
+                    ),
                 )
 
         if payload.parent_execution_id is not None:

@@ -540,6 +540,12 @@ def load_evaluation_dataset(
             exclusion_counts[reason] += 1
             continue
 
+        assert prediction is not None
+        assert prediction.identity_schema_version is not None
+        assert prediction.token_target_semantics is not None
+        assert prediction.prediction_identity_hash is not None
+        assert execution.exact_provider_model is not None
+
         usage_summary = normalize_anthropic_aggregate(
             event_count=event_count,
             input_tokens=(
@@ -556,8 +562,6 @@ def load_evaluation_dataset(
         if usage_summary.primary_total_tokens is None:
             exclusion_counts[usage_summary.unavailable_reason or "invalid_usage_counters"] += 1
             continue
-        assert prediction is not None
-
         record = _EligibleRecord(
             execution_id=execution.execution_id,
             prediction_id=prediction.prediction_id,

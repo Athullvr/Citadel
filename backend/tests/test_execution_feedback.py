@@ -50,7 +50,9 @@ def execution_request(prediction_id: str | None = None) -> dict:
         "integration_name": "test-agent",
         "integration_version": "0.1.0",
         "provider": "anthropic",
-        "exact_provider_model": "test-anthropic-model-v1",
+        "exact_provider_model": (
+            None if prediction_id is not None else "test-anthropic-model-v1"
+        ),
     }
 
 

@@ -148,19 +148,20 @@ structure that tests genuine generalization to an unseen task).
 counts, clause count, step connectors, is_question) ~0%. Honest read: tool
 count and open/narrow keyword phrasing are doing almost all the work; the
 more elaborate structural features (clause counting, explicit-count
-extraction) aren't adding signal yet at this dataset size — worth
-revisiting if/when more data is collected, not a blocker for Phase 3.
+extraction) aren't adding signal yet at this dataset size — worth revisiting
+if/when more data is collected.
 
-**Important honesty caveat (documented in train_model.py and to repeat in
-the README):** the residual band's width is calibrated from the SAME pooled
-LOTO residuals that coverage is then measured against. This is a reasonable
-proof-of-concept calibration but not a fully nested (double) cross-
-validation — that would need more than 20 tasks to be stable. Be upfront
-about this in any user-facing writeup.
+**Important honesty caveat (documented in train_model.py and the README):**
+the residual band's width is fit from the SAME pooled LOTO residuals that
+coverage is then measured against. Its coverage is descriptive, not an
+independent interval validation, a probability guarantee, or a conformal
+claim. This benchmark also does not bind the frozen artifact to an exact
+provider model.
 
-**Verdict: Phase 2 succeeded — did NOT need to fall back to the rule-based/
-heuristic estimator.** The trained model + calibrated band approach works
-and generalizes reasonably at n=20. Proceeding to Phase 3.
+**Historical Phase 2 result:** the trained point estimator produced
+leave-one-task-out predictions for the 20 benchmark task archetypes. Those
+results do not establish exact-model calibration or independently validated
+interval coverage.
 
 ## Phase 3 results (web UI, 2026-08-21)
 
@@ -201,8 +202,8 @@ test, the UI predicted 4,054–12,524–25,608 tokens (actual observed range for
 that exact task in Phase 1 data was 33,581–46,075 for t05, and 4,227–26,697
 via the CLI `predict.py` for a near-identical rephrased task) — in the right
 order of magnitude but on the low side for this particular open-ended task;
-consistent with the known open_ended category being the weakest-calibrated
-band (71% coverage from Phase 2).
+consistent with descriptive pooled coverage being lower for the
+open_ended category (71% in the same validation pool).
 
 Playwright itself was installed as a scratch devDependency in a temp dir for
 this one verification pass, NOT added to `frontend/package.json` — it's not
@@ -218,8 +219,8 @@ examples to `data_collection/data/validation_examples.json`:
 - **t04** (open_ended) — hit: predicted 3,885–12,001–24,538 vs. actual
   6,204–10,642.
 - **t05** (open_ended) — miss (underestimate): predicted high of 31,302
-  exceeded by actual 33,581–46,075. This is the open_ended weak-calibration
-  failure mode made concrete.
+  exceeded by actual 33,581–46,075. This illustrates under-coverage in the
+  pooled leave-one-task-out examples.
 - **t17** (single_shot, zero tools) — miss (overestimate): predicted
   363–2,291 vs. actual 253–279. This is the zero-tool small-n edge case
   made concrete.
