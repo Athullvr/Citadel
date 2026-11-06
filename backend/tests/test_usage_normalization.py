@@ -5,7 +5,7 @@ from usage_normalization import normalize_usage
 def test_anthropic_cache_fields_are_separate_and_not_double_counted():
     normalized = normalize_usage(
         provider="anthropic",
-        exact_provider_model="claude-sonnet-5",
+        exact_provider_model="test-anthropic-model-v1",
         provider_counters={
             "input_tokens": 40,
             "output_tokens": 8,
@@ -29,7 +29,7 @@ def test_anthropic_cache_fields_are_separate_and_not_double_counted():
 def test_anthropic_missing_cache_counter_remains_null_and_incomplete():
     normalized = normalize_usage(
         provider="anthropic",
-        exact_provider_model="claude-sonnet-5",
+        exact_provider_model="test-anthropic-model-v1",
         provider_counters={"input_tokens": 12, "output_tokens": 4},
     )
 

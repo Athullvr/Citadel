@@ -38,7 +38,7 @@ def create_execution(
             "integration_name": "postgres-release-gate",
             "integration_version": "0.3.0-test",
             "provider": "anthropic",
-            "exact_provider_model": "claude-sonnet-5-20251001",
+            "exact_provider_model": "test-anthropic-model-v1",
         },
     )
     assert response.status_code == 201, response.text
@@ -69,7 +69,7 @@ def usage_payload(
     return {
         "event_id": str(event_id or uuid4()),
         "provider": "anthropic",
-        "exact_provider_model": "claude-sonnet-5-20251001",
+        "exact_provider_model": "test-anthropic-model-v1",
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "cache_creation_input_tokens": 20,

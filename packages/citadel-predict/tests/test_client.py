@@ -143,13 +143,13 @@ def test_execution_feedback_methods_use_existing_authenticated_routes():
             integration_name="mcp-agent",
             integration_version="1.0",
             provider="anthropic",
-            exact_provider_model="claude-sonnet-5",
+            exact_provider_model="test-anthropic-model-v1",
         )
         client.record_execution_usage(
             "execution-1",
             event_id="event-1",
             provider="anthropic",
-            exact_provider_model="claude-sonnet-5",
+            exact_provider_model="test-anthropic-model-v1",
             input_tokens=10,
             output_tokens=2,
             cache_creation_input_tokens=None,
@@ -197,7 +197,7 @@ def test_sdk_forwards_provider_counters_effort_and_prediction_provider_context()
         client.create_execution_prediction(
             "A bounded task",
             provider="anthropic",
-            exact_provider_model="claude-sonnet-5",
+            exact_provider_model="test-anthropic-model-v1",
         )
         client.create_execution(
             prediction_id="prediction-1",
@@ -216,7 +216,7 @@ def test_sdk_forwards_provider_counters_effort_and_prediction_provider_context()
         )
 
     assert requests[0][2]["provider"] == "anthropic"
-    assert requests[0][2]["exact_provider_model"] == "claude-sonnet-5"
+    assert requests[0][2]["exact_provider_model"] == "test-anthropic-model-v1"
     assert requests[1][2]["reasoning_effort"] == "high"
     assert requests[2][2]["provider_counters"] == {"input_tokens": 10, "output_tokens": 4}
 
@@ -239,7 +239,7 @@ def test_begin_execution_orchestrates_existing_prediction_execution_and_summary_
             tools=["read_release"],
             integration_name="mcp-agent",
             provider="anthropic",
-            exact_provider_model="claude-sonnet-5",
+            exact_provider_model="test-anthropic-model-v1",
         )
 
     assert detail["execution"]["status"] == "started"
@@ -262,7 +262,7 @@ def test_create_adaptive_prediction_uses_authenticated_profile_route():
         result = client.create_adaptive_prediction(
             "Review a release",
             provider="anthropic",
-            exact_provider_model="claude-sonnet-5-20251001",
+            exact_provider_model="test-anthropic-model-v1",
             tools=["read_release"],
         )
 
@@ -271,7 +271,7 @@ def test_create_adaptive_prediction_uses_authenticated_profile_route():
     assert method == "POST"
     assert path == "/api/predictions/adaptive"
     assert b'"provider":"anthropic"' in body
-    assert b'"exact_provider_model":"claude-sonnet-5-20251001"' in body
+    assert b'"exact_provider_model":"test-anthropic-model-v1"' in body
 
 
 def test_begin_execution_can_opt_into_adaptive_profile():
@@ -298,7 +298,7 @@ def test_begin_execution_can_opt_into_adaptive_profile():
         detail = client.begin_execution(
             task_text="Review a release",
             provider="anthropic",
-            exact_provider_model="claude-sonnet-5-20251001",
+            exact_provider_model="test-anthropic-model-v1",
             use_adaptive_profile=True,
         )
 
@@ -318,7 +318,7 @@ def test_adaptive_profile_requires_new_task_text():
             client.begin_execution(
                 prediction_id="prediction-1",
                 provider="anthropic",
-                exact_provider_model="claude-sonnet-5-20251001",
+                exact_provider_model="test-anthropic-model-v1",
                 use_adaptive_profile=True,
             )
         except ValueError as exc:

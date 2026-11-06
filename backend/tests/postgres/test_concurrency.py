@@ -202,7 +202,7 @@ def test_concurrent_prediction_and_execution_creation(
                 "integration_name": "postgres-release-gate",
                 "integration_version": "0.3.0-test",
                 "provider": "anthropic",
-                "exact_provider_model": "claude-sonnet-5-20251001",
+                "exact_provider_model": "test-anthropic-model-v1",
             },
         ),
     )
@@ -266,7 +266,7 @@ def test_concurrent_usage_for_different_executions_is_isolated(
             payload={
                 "integration_name": "postgres-release-gate",
                 "provider": "anthropic",
-                "exact_provider_model": "claude-sonnet-5-20251001",
+                "exact_provider_model": "test-anthropic-model-v1",
             },
         ),
     )
@@ -345,7 +345,7 @@ def test_records_are_shared_between_workers_and_workspace_filtering_remains_acti
                     "prediction_id": prediction_id,
                     "integration_name": "postgres-release-gate",
                     "provider": "anthropic",
-                    "exact_provider_model": "claude-sonnet-5-20251001",
+                    "exact_provider_model": "test-anthropic-model-v1",
                 },
                 headers=headers,
             ).status_code

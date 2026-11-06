@@ -128,7 +128,7 @@ def test_cancelled_status_migration_refuses_to_erase_cancelled_rows(tmp_path, mo
                 workspace_id="migration-test",
                 integration_name="migration-test",
                 provider="anthropic",
-                exact_provider_model="claude-sonnet-5",
+                exact_provider_model="test-anthropic-model-v1",
                 status="cancelled",
                 started_at=datetime.now(UTC),
             )

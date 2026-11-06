@@ -18,7 +18,6 @@ from execution_feedback import (
     CreatePredictionRequest,
     CreateUsageEventRequest,
     create_execution,
-    persist_prediction_snapshot,
     record_usage_event,
 )
 from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_now

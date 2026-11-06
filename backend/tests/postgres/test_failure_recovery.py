@@ -110,7 +110,7 @@ def test_cancelled_execution_is_terminal_and_preserves_completeness(
         payload={
             "event_id": str(uuid4()),
             "provider": "anthropic",
-            "exact_provider_model": "claude-sonnet-5",
+            "exact_provider_model": "test-anthropic-model-v1",
             "input_tokens": 1,
             "output_tokens": 1,
             "cache_creation_input_tokens": 0,
@@ -227,7 +227,7 @@ def test_disposable_postgres_server_restart_preserves_data_and_pool_recovery(
     event_payload = {
         "event_id": str(event_id),
         "provider": "anthropic",
-        "exact_provider_model": "claude-sonnet-5-20251001",
+        "exact_provider_model": "test-anthropic-model-v1",
         "input_tokens": 321,
         "output_tokens": 87,
         "cache_creation_input_tokens": 21,

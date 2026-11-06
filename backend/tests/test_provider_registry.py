@@ -64,7 +64,7 @@ def test_claude_estimator_remains_a_legacy_alias_without_exact_model_claim():
     assert registration.estimator_status == "calibrated"
     assert registration.exact_provider_model is None
     assert validate_prediction_request(
-        "claude-sonnet", provider="anthropic", exact_provider_model="claude-sonnet-5"
+        "claude-sonnet", provider="anthropic", exact_provider_model="test-anthropic-model-v1"
     ) == registration
 
 

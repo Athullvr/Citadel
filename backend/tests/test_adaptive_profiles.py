@@ -23,12 +23,12 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from httpx import Response
 from main import app
-from pydantic import ValidationError
 from prediction_identity import (
     CLAUDE_TOKEN_TARGET_SEMANTICS,
     IDENTITY_STATUS_LEGACY_UNRESOLVED,
     make_prediction_identity,
 )
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]

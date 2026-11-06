@@ -21,8 +21,8 @@ from execution_feedback import (
 from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_now
 from fastapi import HTTPException
 from main import app
-from pydantic import ValidationError
 from prediction_identity import CLAUDE_TOKEN_TARGET_SEMANTICS, make_prediction_identity
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]

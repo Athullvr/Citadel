@@ -279,7 +279,7 @@ def test_record_usage_keeps_cache_null_and_reports_unverified_source(mcp_server)
                 {
                     "execution_id": _FakeExecutionClient.detail["execution"]["execution_id"],
                     "event_id": event_id,
-                    "exact_provider_model": "claude-sonnet-5",
+                    "exact_provider_model": "test-anthropic-model-v1",
                     "input_tokens": 12,
                     "output_tokens": 3,
                     "cache_creation_input_tokens": None,
