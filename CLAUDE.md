@@ -10,7 +10,7 @@ Welcome to the **Citadel** codebase. This guide provides full context on the arc
 
 ### Core Value Proposition
 - **Predictive, Not Reactive**: Existing agent governance tools (Langfuse, Portkey, LiteLLM) record token usage *during* or *after* runs. Citadel Predict estimates token consumption bounds ($low, expected, high$) and out-of-distribution (OOD) risks **before** agent execution or multi-step tool loops begin.
-- **Statistical Prediction vs. Simulation**: Uses 10 structural & lexical features extracted directly from task text and available tools, evaluated by a Gradient Boosting Regressor with conformal prediction intervals calibrated via Leave-One-Task-Out (LOTO) cross-validation.
+- **Statistical Prediction vs. Simulation**: Uses 10 structural & lexical features with a Gradient Boosting Regressor. The point estimate uses Leave-One-Task-Out (LOTO) validation; empirical interval coverage is measured on the same pooled residuals used to fit the band and is descriptive, not independent conformal validation.
 
 ---
 
@@ -29,7 +29,7 @@ Citadel/
 │   ├── tools.py              # 7 synthetic tools with realistic output growth
 │   ├── agent_runner.py       # ReAct agent loop for Claude Sonnet (Sonnet 5)
 │   ├── build_dataset.py      # Feature matrix builder
-│   ├── train_model.py        # Model trainer & LOTO residual band calibration
+│   ├── train_model.py        # Model trainer & descriptive pooled LOTO residual band
 │   ├── calibration_data/     # Serialized model bundles (.joblib)
 │   │   └── claude-sonnet.joblib # Frozen baseline bundle (N=20 tasks / 80 runs)
 │   ├── data/                 # Benchmark runs (runs.jsonl) & validation examples
