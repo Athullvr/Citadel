@@ -296,6 +296,12 @@ body {
   letter-spacing: 0.4px;
 }
 
+.confidence-note {
+  margin: -6px 0 10px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+
 .confidence-badge.high {
   background-color: rgba(16, 185, 129, 0.15);
   color: var(--citadel-success);

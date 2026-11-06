@@ -36,9 +36,10 @@ Files that exist and are working:
   for our own stratification only, not fed to the model or used as a
   ground-truth feature.
 - `data_collection/agent_runner.py` — manual ReAct loop (NOT the SDK tool
-  runner, for full per-turn token logging) against **Claude Sonnet 5**
-  (`claude-sonnet-5` — user explicitly chose this model over Haiku to save
-  cost; keep it on Sonnet 5 unless told otherwise). 15-turn safety cap.
+  runner, for full per-turn token logging) configured with the request string
+  `claude-sonnet-5`. Historical records do not establish which exact provider
+  model served those requests, so the frozen estimator identity is legacy and
+  unresolved. 15-turn safety cap.
   Logs per-turn input/output/cache tokens, tool calls, stop reasons.
 - `data_collection/run_collection.py` — CLI driver: runs each task N times
   (agent runs are non-deterministic, so multiple samples per task are needed),
@@ -124,10 +125,10 @@ docstring so it isn't retried without reason.
 
 **Final approach:** a single point-estimate GradientBoostingRegressor
 (shallow: max_depth=2, n_estimators=40, min_samples_leaf=4 — regularized
-for n=20) predicting log-tokens, plus a prediction band built from the
-empirical distribution of out-of-fold residuals (10th/90th percentile of
-LOTO residuals in log space) — i.e. a split-conformal-style calibration.
-This is standard practice specifically for tiny-n regimes like this one.
+for n=20) predicting log-tokens, plus an empirical band built from the
+10th/90th percentiles of pooled LOTO residuals in log space. The same pooled
+residuals fit and measure that band, so its coverage is descriptive and is
+not an independent interval validation or a conformal guarantee.
 
 **Validation result: 80.0% overall coverage** (target ~80%, using
 10%/90% residual quantiles) via leave-one-task-out CV (not leave-one-run-out
@@ -239,16 +240,11 @@ added to `frontend/package.json`) — renders correctly, zero console errors,
 screenshot confirmed the hits visually land inside the gray band and misses
 visually land outside it.
 
-Wrote top-level `README.md` covering: the competitive gap this targets
-(reactive cost-governance tools vs. this being pre-execution/predictive),
-the core technical bet (feature-based statistical prediction, not
-simulation, and why — agent behavior is architecturally unpredictable to
-simulate exactly), the rejected quantile-GBM approach and why the
-conformal-style residual-band approach was used instead, full architecture
-map, how to run every piece, the validation results (numbers same as Phase
-2/3 above), and an explicit "known limitations" section (small dataset,
-single model family / Sonnet-5-only, no multi-agent support, non-nested band
-calibration, weaker at cost extremes and for open_ended tasks).
+Wrote top-level `README.md` covering the feature-based estimator, its pooled
+LOTO point-estimate validation, descriptive same-pool residual-band coverage,
+architecture, operating instructions, and limitations. The checked-in
+artifact and historical request strings do not bind that estimator to an
+exact provider model.
 
 **All 4 phases of the original spec are now complete.** The project is a
 working, honestly-caveated MVP: real data collection pipeline -> validated
@@ -266,8 +262,8 @@ Possible future directions (not started, no commitment made):
 
 ## Decision log (don't re-ask these)
 
-- Model for data collection: **Sonnet 5** (`claude-sonnet-5`), explicitly
-  chosen by user over Haiku 4.5 despite Haiku being ~2x cheaper.
+- Runner request configuration: `claude-sonnet-5`. This is a historical
+  configured request string, not verified exact provider-model provenance.
 - Repeats-per-task: **4**, chosen by user (80 total runs) over a 3-repeat
   pilot or 5-repeat larger run.
 - Phase 3 architecture: **FastAPI backend + Next.js frontend**, chosen by

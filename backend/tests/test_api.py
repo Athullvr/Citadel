@@ -267,7 +267,7 @@ def test_resolve_data_collection_dir():
 def test_e2e_unmocked_frozen_bundle_prediction(client):
     """
     Smoke test: calls /api/predict against the real, unmocked claude-sonnet.joblib
-    bundle on disk to verify end-to-end inference and conformal residual ranges.
+    bundle on disk to verify inference and the empirical residual range.
     """
     # 1. Test standard multi-step task
     payload = {

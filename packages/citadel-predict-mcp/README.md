@@ -139,9 +139,11 @@ aggregate when both optional cache counters are present for every event.
 
 ### `begin_execution`
 
-Provide exactly one of `task_text` or `prediction_id`, plus the exact provider
-model. With `task_text`, Citadel creates a persisted prediction through the
-existing estimator before registering the execution. The response contains the
+Provide exactly one of `task_text` or `prediction_id`. Supply an exact provider
+model only when the provider has resolved one for this execution. The current
+Claude estimator cannot establish that identity, so omit it for this legacy
+prediction. With `task_text`, Citadel creates a persisted prediction through
+the existing estimator before registering the execution. The response contains the
 `execution_id` and a safe prediction summary. The tool does not return a
 workspace ID, task hash, prompt, or feature snapshot.
 
@@ -151,7 +153,6 @@ workspace ID, task hash, prompt, or feature snapshot.
   "tools": ["read_release_notes", "draft_checklist"],
   "model_id": "claude-sonnet",
   "provider": "anthropic",
-  "exact_provider_model": "claude-sonnet-5-20251001",
   "integration_name": "my-agent",
   "integration_version": "1.4.0",
   "use_adaptive_profile": true
@@ -163,7 +164,8 @@ with a new `task_text` to request an eligible workspace profile. The returned
 `adaptive_prediction` includes the unchanged model estimate, the adjusted token
 interval, profile level, sample counts, provenance and fallback reason. When
 history is insufficient or unverified, the original estimate is used. This
-option cannot be combined with an existing `prediction_id`.
+option cannot be combined with an existing `prediction_id`. The current
+legacy-unresolved Claude identity cannot activate an exact-model profile.
 
 ### `record_execution_usage`
 
@@ -179,13 +181,18 @@ the caller.
   "execution_id": "<execution_id from begin_execution>",
   "event_id": "c115e9ac-d80b-4e31-b497-96cc1a85a8b0",
   "provider": "anthropic",
-  "exact_provider_model": "claude-sonnet-5-20251001",
+  "exact_provider_model": null,
   "input_tokens": 1200,
   "output_tokens": 240,
   "cache_creation_input_tokens": 300,
   "cache_read_input_tokens": null
 }
 ```
+
+This event remains caller-submitted and unverified. The API checks its
+provider/model identity against the execution and does not let the event replace
+the execution identity. When a provider does not report an exact model, leave
+the field `null`; such telemetry is not eligible for exact-model calibration.
 
 ### `complete_execution` and `get_execution_summary`
 

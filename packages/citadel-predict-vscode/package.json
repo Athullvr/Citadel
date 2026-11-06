@@ -98,7 +98,7 @@
         "citadelPredict.defaultModel": {
           "type": "string",
           "default": "claude-sonnet",
-          "description": "Default model calibration identifier (e.g. 'claude-sonnet', 'gemini-pro')."
+          "description": "Prediction estimator alias. Currently only the legacy-unresolved claude-sonnet estimator is available."
         },
         "citadelPredict.apiKey": {
           "type": "string",

@@ -27,7 +27,7 @@ Citadel/
 │   ├── predict.py            # Model loading, inference, OOD checks & explanations
 │   ├── tasks.py              # 20 benchmark tasks (single_shot, narrow, open_ended)
 │   ├── tools.py              # 7 synthetic tools with realistic output growth
-│   ├── agent_runner.py       # ReAct agent loop for Claude Sonnet (Sonnet 5)
+│   ├── agent_runner.py       # ReAct loop using a configured request string; exact model unresolved
 │   ├── build_dataset.py      # Feature matrix builder
 │   ├── train_model.py        # Model trainer & descriptive pooled LOTO residual band
 │   ├── calibration_data/     # Serialized model bundles (.joblib)
@@ -171,7 +171,7 @@ python scripts/configure_mcp.py --api-url http://localhost:8000 --non-interactiv
 
 1. **Frozen Sonnet Baseline**: The dataset in `data_collection/data/runs.jsonl` and model bundle `data_collection/calibration_data/claude-sonnet.joblib` represent the frozen v1 baseline. Do not alter or rerun Claude Sonnet API data collection unless explicitly instructed.
 2. **Feature Parity**: Any new model calibration profile added to the system MUST strictly use the exact 10 numerical features defined in `data_collection/features.py`.
-3. **Additive Multi-Model Extensibility**: Adding a new model profile (e.g. Gemini, Llama) is done strictly by placing `<model_id>.joblib` in `data_collection/calibration_data/` and registering the ID in `predict.py` (see `MIGRATION_NOTES.md`).
+3. **Provider capability gates**: Registry metadata or a joblib file alone does not make a provider model selectable or calibrated. A model needs a compatible, identity-bound estimator, validated usage semantics, and evaluation evidence before it can be described as supported (see `backend/MULTI_PROVIDER.md`).
 4. **Clean Stdio for MCP**: The MCP server must NEVER print debug statements or non-JSON-RPC messages to standard output (`stdout`). All diagnostics must go to `stderr`.
 5. **Standardized Error Schemas**: All API error responses must follow the schema:
    ```json

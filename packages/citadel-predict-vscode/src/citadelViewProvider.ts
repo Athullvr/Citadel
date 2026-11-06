@@ -245,9 +245,7 @@ export class CitadelViewProvider implements vscode.WebviewViewProvider {
       <label for="model-select" class="section-label">Model Target</label>
     </div>
     <select id="model-select" class="select-input">
-      <option value="claude-sonnet">Claude 3.5 Sonnet (Calibrated ✓)</option>
-      <option value="gemini-pro">Gemini 1.5 Pro (Coming soon)</option>
-      <option value="gpt-4o">GPT-4o (Coming soon)</option>
+      <option value="claude-sonnet">Claude Sonnet (legacy estimator; exact model unresolved)</option>
     </select>
   </section>
 
@@ -279,8 +277,9 @@ export class CitadelViewProvider implements vscode.WebviewViewProvider {
   <div id="result-card" class="result-card" style="display: none;">
     <div class="result-header">
       <span class="result-title">Expected Budget & Cost</span>
-      <span id="confidence-badge" class="confidence-badge high">HIGH</span>
+      <span id="confidence-badge" class="confidence-badge high" title="Heuristic label, not a calibrated probability">HIGH</span>
     </div>
+    <div class="confidence-note">Confidence label is heuristic, not a probability.</div>
 
     <div class="primary-metric-box">
       <div class="primary-metric-label">Predicted Run Cost</div>
@@ -291,12 +290,12 @@ export class CitadelViewProvider implements vscode.WebviewViewProvider {
     </div>
 
     <div class="metric-row">
-      <span class="metric-name">Expected Range (Tokens)</span>
+      <span class="metric-name">Empirical Range (Tokens)</span>
       <span id="range-tokens" class="metric-val">0 – 0</span>
     </div>
 
     <div class="metric-row" id="cost-range-row">
-      <span class="metric-name">Expected Range (USD)</span>
+      <span class="metric-name">Estimated Range (USD)</span>
       <span id="range-cost" class="metric-val">~$0.00 – $0.00</span>
     </div>
 

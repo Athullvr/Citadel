@@ -232,6 +232,7 @@
       const conf = (data.confidence || 'medium').toLowerCase();
       confidenceBadgeEl.className = `confidence-badge ${conf}`;
       confidenceBadgeEl.textContent = conf.toUpperCase();
+      confidenceBadgeEl.title = 'Heuristic label, not a calibrated probability';
     }
 
     // OOD Warning

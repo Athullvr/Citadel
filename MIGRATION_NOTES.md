@@ -1,6 +1,12 @@
 # Migration Notes — Adding Multi-Model Calibration in Phase 2
 
-This document provides step-by-step instructions for adding calibration datasets for new model families (e.g. Gemini via Google AI Studio, Groq open-weight models like Llama 3 / DeepSeek) in **Phase 2**.
+This is a historical proposal for future estimator work, not a description of
+currently supported prediction models. Registry entries and usage normalizers
+are metadata/scaffolding only. A new model is not selectable or calibrated by
+adding a joblib file and alias alone. It also needs exact provider-model
+identity, authenticated or otherwise independently verified telemetry,
+provider-specific target semantics, identity-safe evaluation, and held-out
+validation. See [the current capability table](backend/MULTI_PROVIDER.md).
 
 ---
 
@@ -79,7 +85,10 @@ Run the test suite to ensure the new model loads, predicts, and passes validatio
 pytest backend/tests -v
 ```
 
-That is all! The FastAPI backend automatically accepts `model_id="gemini-2.0-flash"` in requests, caches the loaded bundle in memory, and serves predictions without any further code changes.
+These historical steps are insufficient for current releases. The backend
+does not automatically accept new model IDs from an added bundle; the registry
+and prediction-capability checks must be updated deliberately, and a bundle
+must not be described as calibrated before independent validation.
 
 ---
 

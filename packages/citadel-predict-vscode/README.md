@@ -12,10 +12,10 @@ Draft your agent prompts and see a **live, debounced token budget and USD cost e
 ## 🚀 Features
 
 - **Live Debounced Cost Forecasting**: Computes expected tokens and dollar cost (~$0.XX) within 400ms of pausing typing — zero keystroke lag.
-- **Token & USD Range Prediction**: Shows lower and upper confidence bounds (e.g., `18,200 – 68,000 tokens (~$0.15 – $0.54)`).
+- **Token & USD Estimate**: Shows an empirical token range and estimated cost. The range is descriptive, not an independently validated confidence interval.
 - **Interactive Tool Selector**: Toggle agent tool chips (`web_search`, `fetch_url`, `read_document`, `list_files`, `calculator`, `draft_document`, `bash`, `python_repl`, etc.) to see how tool access impacts execution cost.
-- **Model Calibration Support**: Select calibrated target models (`claude-sonnet`, `gemini-pro`, etc.) with clear visual status banners for uncalibrated models.
-- **Confidence & OOD Alerts**: Real-time confidence badge (`HIGH` / `MEDIUM` / `LOW`) and out-of-distribution (OOD) warnings explaining cost risk factors.
+- **Legacy Claude Estimator**: Select the `claude-sonnet` alias. The frozen estimator has no verified exact provider-model identity and is not exact-model calibrated. Registered OpenAI and Google models are unavailable for prediction.
+- **Heuristic Confidence & OOD Alerts**: Shows a heuristic confidence label (`HIGH` / `MEDIUM` / `LOW`) and out-of-distribution (OOD) warnings; the label is not a calibrated probability.
 - **Editor Selection Shortcut**: Highlight any text in your editor, right-click, and select **"Citadel Predict: Estimate Selected Prompt"**.
 - **One-Click Copy**: "Copy Prompt to Clipboard" button with instant feedback to paste into your favorite agent harness.
 - **Native VS Code Theming**: 100% compliant with VS Code dark, light, and high-contrast theme tokens.
@@ -36,7 +36,7 @@ Draft your agent prompts and see a **live, debounced token budget and USD cost e
 | 112 chars                             [ Insert Sample... ▾]|
 |                                                           |
 | MODEL TARGET                                              |
-| [ Claude 3.5 Sonnet (Calibrated ✓)                     ▾] |
+| [ Claude Sonnet (legacy estimator; exact model unresolved)▾]|
 |                                                           |
 | AVAILABLE AGENT TOOLS                    [ All | None ]   |
 | [✓ web_search] [✓ fetch_url] [✓ draft_document]           |
@@ -48,8 +48,8 @@ Draft your agent prompts and see a **live, debounced token budget and USD cost e
 | | | PREDICTED RUN COST                                | | |
 | | | 42,500 tokens                         (~$0.34)    | | |
 | | +---------------------------------------------------+ | |
-| | Expected Range (Tokens):  18,200 – 68,000             | |
-| | Expected Range (USD):     ~$0.15 – $0.54              | |
+| | Empirical Range (Tokens):  18,200 – 68,000            | |
+| | Estimated Range (USD):    ~$0.15 – $0.54              | |
 | |                                                       | |
 | | KEY COST FACTORS                                      | |
 | | • Web search results accumulation                     | |
@@ -99,7 +99,7 @@ Configure via **VS Code Settings** (`Ctrl+,` or `Cmd+,` -> search `Citadel Predi
 | Setting Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `citadelPredict.apiUrl` | `string` | `https://citadel-7j9u.onrender.com` | Base URL of the Citadel Predict API |
-| `citadelPredict.defaultModel` | `string` | `claude-sonnet` | Default model calibration bundle |
+| `citadelPredict.defaultModel` | `string` | `claude-sonnet` | Legacy estimator alias; its exact provider model is unresolved |
 | `citadelPredict.apiKey` | `string` | `""` | Optional Bearer API key (`CITADEL_API_KEY`) |
 | `citadelPredict.debounceDelayMs` | `number` | `400` | Typing debounce delay in milliseconds |
 | `citadelPredict.timeoutSeconds` | `number` | `10` | HTTP request timeout in seconds |

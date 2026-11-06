@@ -139,9 +139,11 @@ python data_collection/run_collection.py --task-ids task-01 --runs-per-task 1 --
 ```
 
 The runner reports each Anthropic Messages response as a separate event. It
-uses the response's `id` for a deterministic UUIDv5 retry key, the response's
-`model` for the exact provider model, and the provider-reported input, output,
-cache-creation, and cache-read fields. Missing optional cache fields stay null.
+uses the response's `id` for a deterministic UUIDv5 retry key and records the
+provider-reported input, output, cache-creation, and cache-read counters.
+Although the SDK response contains a `model` field, this caller-submitted
+channel does not authenticate that field, so it is not promoted to exact model
+identity. Missing optional cache fields stay null.
 The adapter retries transient HTTP failures with the same event ID and does
 not log task or usage payloads. Telemetry is best-effort; a Citadel outage does
 not stop the agent run.

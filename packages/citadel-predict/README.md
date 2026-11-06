@@ -49,7 +49,6 @@ with CitadelClient() as client:
         task_text="Review the release notes and draft a migration checklist.",
         tools=["read_release_notes", "draft_checklist"],
         provider="anthropic",
-        exact_provider_model="claude-sonnet-5-20251001",
         use_adaptive_profile=True,
     )
 
@@ -65,8 +64,10 @@ existing prediction reference keeps its saved estimate unchanged. The
 original predictor's estimates because total-token residuals do not reveal the
 input/output split. If there is not enough verified, recent, task-deduplicated
 history, the SDK returns the original estimate with a profile status and
-fallback reason. Configure the server's `CITADEL_TASK_HASH_KEY` and trusted
-provider telemetry path before expecting profiles to activate.
+fallback reason. The current frozen Claude estimator has no verified exact
+provider-model identity. Its prediction is marked `legacy_unresolved`, so it
+cannot activate an exact-model adaptive profile. Caller-submitted telemetry
+remains unverified.
 
 ---
 
@@ -210,10 +211,10 @@ except CitadelNetworkError as e:
 
 `citadel-predict` is a thin client wrapping the hosted calibration model. It directly inherits the current system characteristics:
 
-1. **Single-Model Calibration**: Calibration is currently tuned specifically for **Claude Sonnet** (`claude-sonnet`). Future releases will introduce multi-model support via `model_id`.
-2. **Calibration Dataset Scale**: Calibrated on $N=20$ diverse task archetypes across 80 benchmarked runs.
+1. **Legacy estimator identity**: `claude-sonnet` selects the frozen estimator, but the training records contain only the configured request string and the artifact has no exact provider-model metadata. Citadel does not claim exact-model calibration.
+2. **Validation scope**: Point estimates use leave-one-task-out validation over 20 task archetypes and 80 repeated runs. The pooled residual band is descriptive and is not an independently validated interval.
 3. **Synthetic Tool Sizing**: Ground-truth data was collected using deterministic mock tool outputs with representative context expansion. Real-world tools with unbounded payload returns (e.g., massive scraped DOMs) may exhibit higher variance.
-4. **Pre-execution Estimation**: Token predictions represent calibrated statistical ranges $[low, expected, high]$, not runtime guarantees against infinite loops or divergent agent reasoning.
+4. **Pre-execution Estimation**: Token predictions include an empirical range, not a calibrated probability interval or runtime guarantee against infinite loops or divergent agent reasoning. Confidence labels are heuristic.
 
 ---
 

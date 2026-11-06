@@ -10,7 +10,8 @@ Each run:
     is hit
   - records per-turn token usage and returns a structured result dict
 
-Model: claude-sonnet-5 (explicitly requested by the project spec).
+Configured request string: claude-sonnet-5. Historical records do not prove
+which exact provider model served those requests.
 """
 
 from __future__ import annotations
