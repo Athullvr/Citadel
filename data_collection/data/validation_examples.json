@@ -60,7 +60,7 @@
     "pred_expected": 15309,
     "pred_high": 31302,
     "verdict": "miss (underestimate)",
-    "note": "The model's high estimate was exceeded: this task chains research -> synthesis -> 3 separate emails, and the real run's context compounded faster across turns than the model predicted. open_ended tasks are the weakest-calibrated category overall (71% LOTO coverage vs the 80% target) -- this is that failure mode in practice."
+    "note": "The model's high estimate was exceeded: this task chains research -> synthesis -> 3 separate emails, and the real run's context compounded faster across turns than the model predicted. This is an example of the model missing an iterative task; interval coverage is descriptive because the same pooled LOTO residuals fit and measure the band."
   },
   {
     "task_id": "t17",

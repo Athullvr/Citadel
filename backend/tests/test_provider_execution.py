@@ -6,6 +6,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from database import create_database_engine
+from fastapi import HTTPException
 from execution_feedback import (
     CreateExecutionRequest,
     CreateUsageEventRequest,
@@ -112,10 +113,14 @@ def test_missing_provider_counter_stays_null_and_exact_model_mismatch_is_rejecte
     provider_db.commit()
 
     mismatched_model = _usage_request(exact_model="gpt-6.1-sol")
-    record_usage_event(execution.execution_id, mismatched_model, _auth=None, db=provider_db)
+    with pytest.raises(HTTPException) as mismatch:
+        record_usage_event(
+            execution.execution_id, mismatched_model, _auth=None, db=provider_db
+        )
+    assert mismatch.value.status_code == 409
     incompatible_summary = get_execution(execution.execution_id, _auth=None, db=provider_db)
     assert incompatible_summary.usage.input_tokens is None
-    assert incompatible_summary.usage.incompatible_usage_event_count == 1
+    assert incompatible_summary.usage.incompatible_usage_event_count == 0
 
 
 @pytest.mark.parametrize(

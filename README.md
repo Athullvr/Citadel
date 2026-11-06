@@ -5,7 +5,7 @@
 [![Python Versions](https://img.shields.io/pypi/pyversions/citadel-predict.svg)](https://pypi.org/project/citadel-predict/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Citadel Predict** is a pre-execution token budget and cost prediction platform for autonomous AI agent workflows. It predicts the LLM token consumption and dollar cost of an agent run **before the agent executes** — outputting a calibrated uncertainty range (`[low, expected, high]` tokens and USD), driving factor explanations, and out-of-distribution (OOD) risk flags.
+**Citadel Predict** provides pre-execution token estimates for autonomous AI agent workflows. Its existing `claude-sonnet` alias returns the frozen legacy estimator's `[low, expected, high]` range, driving factor explanations, and out-of-distribution (OOD) flags. The repository cannot bind that artifact to one exact provider model; persisted predictions mark the model identity `legacy_unresolved`.
 
 ---
 
@@ -118,7 +118,7 @@ Citadel Predict extracts **10 structural & lexical features** directly from the 
 9. `num_clauses`: Structural sentence clause count.
 10. `is_question`: Boolean indicator for question syntax.
 
-Features are evaluated by a **Gradient Boosting Regressor** with split-conformal prediction intervals calibrated via Leave-One-Task-Out (LOTO) cross-validation.
+The point estimator is a **Gradient Boosting Regressor**. Its point-estimate validation uses Leave-One-Task-Out (LOTO): all repeats of one task are excluded from that fold's training set. The empirical residual band is fit to pooled LOTO residuals and its coverage is measured on that same pool, so the reported coverage is descriptive rather than an independent interval validation or a conformal guarantee.
 
 ---
 
@@ -199,11 +199,11 @@ To deploy your own instance:
 
 ## Honest Capabilities & Known Limitations
 
-1. **Baseline Model**: Calibration is currently fit on **Claude Sonnet** ($N=20$ benchmark task archetypes, 80 empirical runs).
-2. **Synthetic Tool Sizing**: Collected with deterministic mock tools with representative output expansion. Real tools with massive dynamic responses (e.g. raw HTML scraping) may exhibit higher variance.
-3. **Statistical Interval**: Predictions provide empirical prediction intervals (~80% LOTO coverage), not guarantees against infinite loops or divergent agent reasoning.
-4. **Out-of-Distribution Flags**: Tasks exceeding length thresholds or tool boundaries are clearly flagged with `out_of_distribution=True` and specific advisory reasons.
-5. **Input/Output Split Approximation**: Dollar cost estimates apply published provider rates using an empirical 75% input / 25% output token split based on multi-turn ReAct agent trajectory composition (where prompt histories and tool outputs compound). Dollar figures are calibrated approximations, not exact billing invoices.
+1. **Legacy estimator identity**: The checked-in training rows name the configured request string `claude-sonnet-5`, while the estimator is named `claude-sonnet`. The artifact has no exact provider model metadata, so Citadel does not claim exact-model calibration.
+2. **Benchmark scope**: The baseline has 20 task archetypes and 80 repeated runs, collected with deterministic mock tools. It is not authenticated provider telemetry; real tools with dynamic output may behave differently.
+3. **Statistical interval**: The point estimate has leave-one-task-out validation. The residual band is fit and measured on the same pooled out-of-fold residuals; coverage is descriptive and does not establish independent interval accuracy.
+4. **Confidence label**: `confidence` is a heuristic feature-based label, not a calibrated probability.
+5. **Input/output split approximation**: Dollar estimates use an empirical 75% input / 25% output split and published rates. They are rough estimates, not billing invoices.
 
 ---
 

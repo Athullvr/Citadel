@@ -17,7 +17,7 @@ from adaptive_profiles import (
 from alembic import command
 from alembic.config import Config
 from database import create_database_engine
-from execution_feedback import require_execution_auth
+from execution_feedback import _artifact_digest, require_execution_auth
 from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_now
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -52,7 +52,7 @@ def adaptive_client(tmp_path, monkeypatch):
 
 
 def _test_prediction_identity(payload):
-    artifact_digest = adaptive_api._artifact_digest("claude-sonnet")
+    artifact_digest = _artifact_digest("claude-sonnet")
     assert artifact_digest is not None
     artifact_sha256 = artifact_digest.removeprefix("sha256:")
     status = "resolved" if payload.exact_provider_model else IDENTITY_STATUS_LEGACY_UNRESOLVED
@@ -84,7 +84,7 @@ def _insert_history(
     expected_event_count: int = 1,
     status: str = "completed",
 ) -> None:
-    artifact_digest = artifact_version or adaptive_api._artifact_digest("claude-sonnet")
+    artifact_digest = artifact_version or _artifact_digest("claude-sonnet")
     assert artifact_digest is not None
     artifact_sha256 = (
         artifact_digest.removeprefix("sha256:")
@@ -617,13 +617,17 @@ def test_negative_residual_and_unsupported_hierarchy_metadata_fall_back_safely(
             exact_provider_model="other-model-v1",
         )
 
-    unsupported_identity = _test_prediction_identity(
-        AdaptivePredictionRequest(
-            task_text="Test task",
-            model_id="claude-sonnet",
-            provider="other-provider",
-            exact_provider_model="other-model-v1",
-        )
+    artifact_digest = _artifact_digest("claude-sonnet")
+    assert artifact_digest is not None
+    unsupported_identity = make_prediction_identity(
+        identity_status="resolved",
+        provider="other-provider",
+        exact_provider_model="other-model-v1",
+        model_alias="claude-sonnet",
+        token_target_semantics=CLAUDE_TOKEN_TARGET_SEMANTICS,
+        estimator_artifact_version=f"frozen-claude-sonnet-bundle@{artifact_digest}",
+        estimator_artifact_sha256=artifact_digest.removeprefix("sha256:"),
+        pricing_schedule_version=None,
     )
     with Session(engine) as db:
         unsupported_profile = get_adaptive_profile(

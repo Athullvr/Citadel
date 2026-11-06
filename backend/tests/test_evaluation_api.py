@@ -49,7 +49,7 @@ def insert_prediction(
     provider: str = "anthropic",
     provider_model: str = "test-anthropic-model-a-v1",
 ) -> PredictionRecord:
-    artifact_sha256 = "a" * 64
+    artifact_sha256 = "f" * 64
     artifact_version = f"evaluation-test-estimator@sha256:{artifact_sha256}"
     identity = make_prediction_identity(
         identity_status="resolved",

@@ -76,7 +76,7 @@ Example usage event:
 {
   "event_id": "55f8f99d-cc54-5db1-9d9d-2ece3f82295f",
   "provider": "anthropic",
-  "exact_provider_model": "claude-sonnet-5",
+  "exact_provider_model": null,
   "input_tokens": 1200,
   "output_tokens": 240,
   "cache_creation_input_tokens": 300,
@@ -106,12 +106,28 @@ creation timestamp; the runner therefore sends its UTC observation time as
 [prompt caching usage fields](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
 and [Python SDK message schema](https://github.com/anthropics/anthropic-sdk-python/blob/main/src/anthropic/types/message.py).
 
-Prediction costs remain estimates based on the existing `claude-sonnet` pricing
-alias and 75/25 split, not actual billed cost. The existing runner requests the
-exact model ID `claude-sonnet-5`; telemetry stores that identifier alongside
-the estimator alias and does not claim those identifiers or pricing schedules
-are equivalent. Current pricing registry metadata is preserved as-is, including
-its `last_updated` value; it is not refreshed or independently verified here.
+The runner's configured model string is a request value, not a verified
+provider-resolved model identity. Historical run rows store that configured
+string and the frozen estimator bundle contains no exact model metadata, so
+new predictions under `claude-sonnet` have `identity_status` set to
+`legacy_unresolved` and no exact model. The runner does not promote its
+caller-submitted response model into execution identity. This keeps synthetic,
+unverified usage events attached to the unresolved prediction without making
+them exact-model calibration evidence.
+
+Prediction identity snapshots contain the provider, exact model when resolved,
+model alias, token-target semantics, estimator artifact version and SHA-256,
+pricing schedule version when present, identity schema version, and a canonical
+identity hash. Executions and usage events copy the schema/status, token target,
+and prediction identity hash; provider and exact model must match at each API
+boundary. An identity mismatch returns 409. Linked predictions with unresolved
+identity remain readable but are excluded from evaluation and adaptive profiles.
+
+Migration `0005_prediction_identity` adds nullable identity fields and marks old
+predictions, executions, and usage events as unresolved without backfilling a
+model guess. Downgrade refuses to remove new identity-bearing or null-model
+execution/usage rows. Historical records that predate this migration remain
+readable and are explicitly unresolved after upgrade.
 
 ## Anthropic reference runner
 

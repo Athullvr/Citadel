@@ -54,6 +54,10 @@ class PredictResponse(BaseModel):
     )
     driving_factors: list[str]
     features: dict[str, Any]
-    confidence: str
+    confidence: str = Field(
+        description=(
+            "Heuristic feature-based label; it is not a calibrated probability of accuracy."
+        )
+    )
     out_of_distribution: bool
     ood_reasons: list[str]

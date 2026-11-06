@@ -8,10 +8,13 @@ estimators for the newly registered provider models.
 
 | Classification | Current scope |
 | --- | --- |
-| **Supported estimator** | The existing frozen `claude-sonnet` prediction alias. The repository does not identify an exact provider model or a compatible versioned price schedule for this historical alias. |
-| **Scaffolded** | Usage normalization for Anthropic Messages, OpenAI Responses, and Google Gemini GenerateContent; exact model metadata is exposed by `GET /api/models`. Submitted records remain unverified. |
-| **Uncalibrated** | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6-astra`, and `gemini-3.8-flash`. Citadel can record compatible provider counters, but cannot predict these models. |
-| **Unavailable** | Provider-authenticated ingestion, verified telemetry writers, exact-model estimators, and Citadel pricing schedules for the candidate models. |
+| **Registered** | Provider and exact-model metadata is exposed by `GET /api/models`. Registration describes a model; it does not make it selectable for prediction. |
+| **Scaffolded** | Anthropic Messages, OpenAI Responses, and Google Gemini GenerateContent usage normalizers accept caller-submitted counters. Submissions remain unverified. |
+| **Prediction-capable** | The existing frozen `claude-sonnet` alias only. Its prediction identity is `legacy_unresolved`; the repository does not identify the exact provider model represented by the artifact. |
+| **Uncalibrated / unavailable for prediction** | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6-astra`, and `gemini-3.8-flash`. Citadel has no compatible estimator for them. |
+| **Telemetry-capable** | Public REST, SDK, and MCP endpoints accept provider-specific usage counters as `unverified_submitted`; they are not authenticated provider telemetry. |
+| **Calibrated / validated exact model** | None. The legacy estimator has historical point-estimate LOTO results, but cannot be bound to an exact provider model. Its interval coverage is descriptive, not an independent validation result. |
+| **Unavailable** | Provider-authenticated telemetry writers and exact-model estimators for the registered OpenAI and Google candidates. |
 
 The model identifiers and capabilities above were checked against the
 [OpenAI model catalog](https://developers.openai.com/api/docs/models), the
@@ -22,14 +25,12 @@ provider model. Reasoning-effort values are validated against the selected
 exact model when an execution is registered.
 
 `GET /api/models` separates provider model metadata from prediction estimator
-availability. `/api/predict` and persisted prediction creation continue to use
-only `claude-sonnet`; requesting a registered but uncalibrated provider model
-returns an explicit error. Execution workflows that create a prediction pass
-the selected provider context and are rejected if it does not match the
-estimator. Existing executions may still attach an explicitly supplied
-prediction reference for backward compatibility; evaluation excludes
-provider-incompatible observations. Citadel never silently falls back to the
-Claude estimator for another provider.
+availability. `/api/predict` preserves its existing `claude-sonnet` request and
+response shape. Persisted predictions carry an immutable identity snapshot; the
+legacy alias is explicitly unresolved and cannot activate an exact-model
+adaptive profile. Requesting a registered but uncalibrated provider model
+returns an explicit error. Citadel never silently falls back to the Claude
+estimator for another provider.
 
 ## Usage semantics
 

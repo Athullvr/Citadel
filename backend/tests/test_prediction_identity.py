@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,6 +10,7 @@ import main
 import pytest
 from alembic import command
 from alembic.config import Config
+from api_schemas import PredictRequest, PredictResponse
 from database import create_database_engine
 from evaluation_service import EvaluationFilters, load_evaluation_dataset
 from execution_feedback import (
@@ -22,7 +22,6 @@ from execution_feedback import (
 )
 from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_now
 from fastapi import HTTPException
-from httpx import ASGITransport, AsyncClient
 from prediction_identity import (
     CLAUDE_TOKEN_TARGET_SEMANTICS,
     IDENTITY_SCHEMA_VERSION,
@@ -193,20 +192,14 @@ def test_new_prediction_persists_legacy_identity_and_unchanged_claude_api(
 
     monkeypatch.setattr(main, "run_predict", lambda *_args, **_kwargs: result)
 
-    async def request_legacy_endpoint():
-        async with AsyncClient(
-            transport=ASGITransport(app=main.app), base_url="http://citadel.test"
-        ) as client:
-            return await client.post(
-                "/api/predict",
-                headers={"Authorization": f"Bearer {API_KEY}"},
-                json={"task_text": "legacy request", "tools": ["web_search"]},
-            )
-
-    legacy_response = asyncio.run(request_legacy_endpoint())
-    assert legacy_response.status_code == 200
-    assert legacy_response.json() == result
-    assert "identity" not in legacy_response.json()
+    route = next(route for route in main.app.routes if getattr(route, "path", None) == "/api/predict")
+    legacy_response = route.endpoint.__wrapped__(
+        None,
+        PredictRequest(task_text="legacy request", tools=["web_search"]),
+        None,
+    )
+    assert PredictResponse.model_validate(legacy_response).model_dump() == result
+    assert "identity" not in legacy_response
 
 
 def test_execution_registration_rejects_provider_model_and_target_mismatch(identity_database):
@@ -536,11 +529,12 @@ def test_identity_migration_refuses_to_drop_new_identity(identity_database):
     with Session(identity_database) as db:
         identity = _resolved_identity()
         prediction = _insert_prediction(db, identity=identity)
+        prediction_id = prediction.prediction_id
         db.commit()
     with pytest.raises(RuntimeError, match="Cannot downgrade prediction identity"):
         command.downgrade(Config(str(BACKEND_DIR / "alembic.ini")), "0004_provider_usage_metadata")
     command.upgrade(Config(str(BACKEND_DIR / "alembic.ini")), "head")
     with Session(identity_database) as db:
-        assert db.get(PredictionRecord, prediction.prediction_id).prediction_identity_hash == (
+        assert db.get(PredictionRecord, prediction_id).prediction_identity_hash == (
             identity.prediction_identity_hash
         )

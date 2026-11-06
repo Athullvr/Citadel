@@ -77,8 +77,9 @@ def load_bundle(model_id: str = DEFAULT_MODEL, path: str | None = None) -> dict[
 
 def assess_confidence_and_ood(feats: dict[str, Any]) -> tuple[str, bool, list[str]]:
     """
-    Assess whether the input task falls outside the N=20 training distribution
-    and determine the prediction confidence level.
+    Assess whether the task is outside the small training distribution and
+    determine a heuristic confidence label. The label is not a calibrated
+    probability of prediction accuracy.
 
     Training distribution characteristics (N=20 tasks, 80 runs):
     - Tools available: 0 to 5 (only 2 tasks had 0 tools; maximum was 5)

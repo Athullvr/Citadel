@@ -1,15 +1,15 @@
 """
 Generates the 4 "how this compares to real runs" examples used in the demo
-(frontend validation section + README). Uses genuine LEAVE-ONE-TASK-OUT
+(frontend validation section + README). Uses LEAVE-ONE-TASK-OUT point
 predictions (the model never saw the held-out task during training for that
-example), not the in-sample final model, so these are honest generalization
-examples rather than the model just recalling data it was trained on.
+example), not the in-sample final model. Interval bounds use pooled LOTO
+residuals and are not independently validated.
 
 Picked deliberately to show a mix, not just wins:
   - t15, t04: the model's predicted range contains the actual outcome
   - t05: a MISS -- an open-ended task whose real cost compounded past the
-    predicted high end (the model underestimates heavy iterative research
-    tasks; open_ended is the weakest-calibrated category at 71% LOTO coverage)
+    predicted high end (the model underestimates some heavy iterative research
+    tasks; open_ended has the lowest descriptive LOTO coverage in this dataset)
   - t17: a MISS -- a trivial zero-tool task where the model overestimates,
     because only 2 of the 20 tasks have zero tools, so leave-one-out starves
     the model of examples at that extreme
@@ -42,9 +42,9 @@ SELECTED = {
         "note": "The model's high estimate was exceeded: this task chains "
                  "research -> synthesis -> 3 separate emails, and the real "
                  "run's context compounded faster across turns than the "
-                 "model predicted. open_ended tasks are the weakest-"
-                 "calibrated category overall (71% LOTO coverage vs the "
-                 "80% target) -- this is that failure mode in practice.",
+                 "model predicted. This is an example of the model missing "
+                 "an iterative task; interval coverage is descriptive because "
+                 "the same pooled LOTO residuals fit and measure the band.",
     },
     "t17": {
         "verdict": "miss (overestimate)",

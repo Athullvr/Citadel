@@ -6,31 +6,30 @@ Trains a baseline model to predict a [low, expected, high] token-cost range
 from task features.
 
 Approach: a single point-estimate regressor (predicts log_total_tokens),
-plus a prediction band built from the empirical distribution of out-of-fold
-residuals (a simple split-conformal-style calibration), rather than three
-independently-fit quantile regressors.
+plus an empirical residual band built from leave-one-task-out predictions,
+rather than three independently-fit quantile regressors. The point-estimate
+validation holds out all runs for each task. The band quantiles and the printed
+coverage use the same pooled out-of-fold residuals; coverage is descriptive and
+is not an independent interval-validation result or a formal conformal claim.
 
 Why not independent low/expected/high quantile-GBMs (the first thing tried):
 with only ~19 training tasks per leave-one-out fold, three separately fit
 quantile models disagreed badly with each other and produced a band that
 only covered the true value 45% of the time against an 80% target -- i.e.
-badly overconfident/miscalibrated. A single point estimate + an empirical
-residual band is a much lower-variance approach for a dataset this small,
-and it's the standard fix (this IS what "conformal prediction" is): don't
-trust a model's own quantile outputs at n=20, trust the empirical spread of
-its historical errors instead.
+badly overconfident on this small dataset. A single point estimate plus an
+empirical residual band is a lower-variance descriptive approach here, but the
+small sample does not establish calibrated interval coverage.
 
 Validation strategy: LEAVE-ONE-TASK-OUT (LOTO), not leave-one-run-out. The 4
 repeat runs of the same task share a feature vector, so testing on a repeat
 of a task seen in training would overstate generalization to a genuinely new
 task. Held-out means the model never saw that task's feature vector.
 
-Honesty note (small-n limitation): the residual band's width is calibrated
-using the pooled out-of-fold residuals from ALL 20 LOTO folds, and coverage
-is then measured against that same residual pool. This is a reasonable
-proof-of-concept calibration but is not a fully nested (double) cross-
-validation, which would need a larger dataset to be stable. Flagged again in
-the README.
+Honesty note (small-n limitation): the residual band's width is fit using the
+pooled out-of-fold residuals from all 20 LOTO folds, and coverage is measured
+against that same residual pool. This is descriptive proof-of-concept output,
+not a held-out or nested interval validation. The repeated runs also share
+task-level features, so report task counts separately from execution counts.
 """
 
 import warnings
@@ -135,16 +134,15 @@ def main():
     ).round(0))
 
     coverage = resid_df["within_range"].mean()
-    print(f"\nOverall coverage (actual falls within [low, high]): {coverage:.1%}")
-    print(f"(Target ~{BAND_HIGH_QUANTILE - BAND_LOW_QUANTILE:.0%} given "
-          f"{BAND_LOW_QUANTILE:.0%}/{BAND_HIGH_QUANTILE:.0%} residual quantiles used.)")
+    print(f"\nDescriptive pooled LOTO coverage: {coverage:.1%}")
+    print(f"(Same pooled residuals fit the {BAND_LOW_QUANTILE:.0%}/"
+          f"{BAND_HIGH_QUANTILE:.0%} band; this is not independent interval validation.)")
 
     print("\nCoverage by category:")
     print(resid_df.groupby("category")["within_range"].mean())
 
-    print("\nNote: this coverage figure is calibrated and measured on the same "
-          "pooled LOTO residuals (a proof-of-concept limitation of n=20 tasks, "
-          "not a fully nested cross-validation) -- see README.")
+    print("\nNote: coverage is descriptive because the band is fit and measured "
+          "on the same pooled LOTO residuals; see README.")
 
     print("\n=== Fitting final point-estimate model on full dataset ===")
     final_model = fit_point_model(df[FEATURE_NAMES], df["log_total_tokens"].values)
