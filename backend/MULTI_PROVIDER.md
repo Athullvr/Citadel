@@ -8,7 +8,7 @@ estimators for the newly registered provider models.
 
 | Classification | Current scope |
 | --- | --- |
-| **Supported estimator** | The existing frozen `claude-sonnet` prediction alias. The repository does not identify an exact provider model for this historical alias. |
+| **Supported estimator** | The existing frozen `claude-sonnet` prediction alias. The repository does not identify an exact provider model or a compatible versioned price schedule for this historical alias. |
 | **Scaffolded** | Usage normalization for Anthropic Messages, OpenAI Responses, and Google Gemini GenerateContent; exact model metadata is exposed by `GET /api/models`. Submitted records remain unverified. |
 | **Uncalibrated** | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6-astra`, and `gemini-3.8-flash`. Citadel can record compatible provider counters, but cannot predict these models. |
 | **Unavailable** | Provider-authenticated ingestion, verified telemetry writers, exact-model estimators, and Citadel pricing schedules for the candidate models. |
@@ -24,9 +24,12 @@ exact model when an execution is registered.
 `GET /api/models` separates provider model metadata from prediction estimator
 availability. `/api/predict` and persisted prediction creation continue to use
 only `claude-sonnet`; requesting a registered but uncalibrated provider model
-returns an explicit error. Citadel never falls back to the Claude estimator for
-another provider. When execution creation includes a prediction reference, its
-registered estimator provider must match the execution provider.
+returns an explicit error. Execution workflows that create a prediction pass
+the selected provider context and are rejected if it does not match the
+estimator. Existing executions may still attach an explicitly supplied
+prediction reference for backward compatibility; evaluation excludes
+provider-incompatible observations. Citadel never silently falls back to the
+Claude estimator for another provider.
 
 ## Usage semantics
 

@@ -186,6 +186,24 @@ def resolve_provider_model(provider: str, identifier: str) -> ProviderModel | No
     return None
 
 
+def validate_provider_model_identity(provider: str, exact_model_id: str) -> None:
+    """Reject an exact ID already registered to a different provider.
+
+    Unknown identifiers remain recordable for observability, but known exact
+    identifiers cannot be paired with another provider.
+    """
+    provider_id = normalize_provider_id(provider)
+    known = next(
+        (model for model in PROVIDER_MODELS if model.exact_model_id == exact_model_id),
+        None,
+    )
+    if known is not None and known.provider != provider_id:
+        raise ValueError(
+            f"Exact model '{exact_model_id}' is registered to provider '{known.provider}', "
+            f"not '{provider_id}'."
+        )
+
+
 def validate_reasoning_effort(
     provider: str, exact_model_id: str, reasoning_effort: str | None
 ) -> str | None:
@@ -196,6 +214,7 @@ def validate_reasoning_effort(
     """
     if reasoning_effort is None:
         return None
+    validate_provider_model_identity(provider, exact_model_id)
     model = resolve_provider_model(provider, exact_model_id)
     if model is None:
         raise ValueError("Reasoning effort cannot be validated for an unknown exact model.")

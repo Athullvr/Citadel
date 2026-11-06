@@ -553,12 +553,26 @@ def test_negative_residual_and_unsupported_hierarchy_metadata_fall_back_safely(
         "task_category_not_stored"
     )
 
-    unsupported = _adaptive_request(
-        engine,
-        tools=[], provider="other-provider", exact_provider_model="other-model-v1"
-    )
-    assert unsupported.status_code == 201, unsupported.text
-    assert unsupported.json()["profile"]["status"] == "incompatible"
-    assert unsupported.json()["profile"]["evaluation_window"]["start_at"]
-    assert unsupported.json()["adjusted_prediction"]["expected_tokens"] == 100
+    with pytest.raises(ValidationError):
+        _adaptive_request(
+            engine,
+            tools=[],
+            provider="other-provider",
+            exact_provider_model="other-model-v1",
+        )
+
+    with Session(engine) as db:
+        unsupported_profile = get_adaptive_profile(
+            db,
+            workspace_id=WORKSPACE_ID,
+            provider="other-provider",
+            exact_provider_model="other-model-v1",
+            model_alias="claude-sonnet",
+            model_artifact_version=adaptive_api._artifact_digest("claude-sonnet"),
+            low_tokens=90,
+            expected_tokens=100,
+            high_tokens=130,
+        )
+    assert unsupported_profile["status"] == "incompatible"
+    assert unsupported_profile["adjustment_tokens"] == 0
 

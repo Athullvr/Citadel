@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from provider_registry import PROVIDER_MODELS, ProviderModel
+from provider_registry import PROVIDER_MODELS, ProviderModel, validate_provider_model_identity
 
 PredictionStatus = Literal["calibrated", "uncalibrated", "unavailable"]
 
@@ -44,7 +44,7 @@ LEGACY_CLAUDE_ESTIMATOR = PredictionRegistration(
     estimator_id="frozen-claude-sonnet-bundle",
     estimator_status="calibrated",
     artifact_version="resolved-at-runtime-sha256",
-    pricing_version="legacy-pricing-date:2025-01-01",
+    pricing_version=None,
     description=(
         "Existing frozen Claude Sonnet estimator alias. The repository does not map this "
         "alias to an exact provider model identifier."
@@ -101,6 +101,8 @@ def validate_prediction_request(
         raise ValueError(
             f"Estimator '{model_id}' is not compatible with provider '{provider}'."
         )
+    if provider is not None and exact_provider_model is not None:
+        validate_provider_model_identity(provider, exact_provider_model)
     return registration
 
 

@@ -47,6 +47,7 @@ def _insert_ledger_rows(engine):
                 integration_name="postgres-release-gate",
                 provider="anthropic",
                 exact_provider_model="claude-sonnet-5-20251001",
+                reasoning_effort="high",
                 status="started",
                 started_at=now,
             )
@@ -63,6 +64,17 @@ def _insert_ledger_rows(engine):
                 output_tokens=30,
                 cache_creation_input_tokens=20,
                 cache_read_input_tokens=10,
+                cached_input_tokens=30,
+                reasoning_tokens=2,
+                token_semantics="anthropic.messages.cache_exclusive_input.v1",
+                usage_completeness="complete",
+                provider_counters={
+                    "input_tokens": 120,
+                    "output_tokens": 30,
+                    "cache_creation_input_tokens": 20,
+                    "cache_read_input_tokens": 10,
+                    "thinking_tokens": 2,
+                },
                 source="postgres_release_gate",
                 occurred_at=now,
                 idempotency_identifier=str(event_id),
@@ -89,7 +101,18 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
     assert {
         "expected_usage_event_count",
         "telemetry_provenance",
+        "reasoning_effort",
     } <= execution_columns
+    usage_columns = {column["name"] for column in inspector.get_columns("usage_events")}
+    assert {
+        "cached_input_tokens",
+        "reasoning_tokens",
+        "tool_use_prompt_tokens",
+        "total_tokens",
+        "token_semantics",
+        "usage_completeness",
+        "provider_counters",
+    } <= usage_columns
 
     expected_indexes = {
         "ix_execution_predictions_workspace_created",
@@ -133,6 +156,11 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
         "ck_usage_output_nonnegative",
         "ck_usage_cache_creation_nonnegative",
         "ck_usage_cache_read_nonnegative",
+        "ck_usage_cached_nonnegative",
+        "ck_usage_reasoning_nonnegative",
+        "ck_usage_tool_prompt_nonnegative",
+        "ck_usage_total_nonnegative",
+        "ck_usage_event_completeness",
         "ck_execution_expected_usage_event_count_nonnegative",
         "ck_execution_telemetry_provenance",
     }
@@ -219,7 +247,11 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
 
     with Session(postgres_engine) as db:
         assert db.get(PredictionRecord, prediction_id).model_alias == "claude-sonnet"
-        assert db.get(UsageEvent, event_id).output_tokens == 30
+        stored_usage = db.get(UsageEvent, event_id)
+        assert stored_usage.output_tokens == 30
+        assert stored_usage.provider_counters["thinking_tokens"] == 2
+        assert stored_usage.token_semantics == "anthropic.messages.cache_exclusive_input.v1"
+        assert db.get(ExecutionRecord, execution_id).reasoning_effort == "high"
 
         db.add(
             ExecutionRecord(

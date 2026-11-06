@@ -83,7 +83,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    null_counters = op.get_bind().execute(
+    bind = op.get_bind()
+    null_counters = bind.execute(
         sa.text(
             "SELECT count(*) FROM usage_events "
             "WHERE input_tokens IS NULL OR output_tokens IS NULL"
@@ -95,7 +96,27 @@ def downgrade() -> None:
             "preserve the original records."
         )
 
-    if op.get_bind().dialect.name == "postgresql":
+    provider_usage_rows = bind.execute(
+        sa.text(
+            "SELECT count(*) FROM usage_events WHERE "
+            "cached_input_tokens IS NOT NULL OR reasoning_tokens IS NOT NULL OR "
+            "tool_use_prompt_tokens IS NOT NULL OR total_tokens IS NOT NULL OR "
+            "token_semantics IS NOT NULL OR usage_completeness != 'unknown' OR "
+            "provider_counters IS NOT NULL"
+        )
+    ).scalar_one()
+    executions_with_effort = bind.execute(
+        sa.text(
+            "SELECT count(*) FROM execution_records WHERE reasoning_effort IS NOT NULL"
+        )
+    ).scalar_one()
+    if provider_usage_rows or executions_with_effort:
+        raise RuntimeError(
+            "Cannot downgrade provider usage metadata while provider-specific data exists; "
+            "preserve the original records."
+        )
+
+    if bind.dialect.name == "postgresql":
         for name in (
             "ck_usage_event_completeness",
             "ck_usage_total_nonnegative",

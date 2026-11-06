@@ -82,3 +82,8 @@ def test_prediction_provider_mismatch_is_rejected():
         validate_prediction_request(
             "claude-sonnet", provider="openai", exact_provider_model="gpt-6-luna"
         )
+
+    with pytest.raises(ValueError, match="registered to provider 'google'"):
+        validate_prediction_request(
+            "claude-sonnet", provider="anthropic", exact_provider_model="gemini-3.8-flash"
+        )

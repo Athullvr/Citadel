@@ -32,7 +32,11 @@ from predict import DEFAULT_MODEL, SUPPORTED_MODELS, get_bundle_path
 from predict import predict as run_predict
 from prediction_registry import resolve_prediction_registration, validate_prediction_request
 from pricing import DEFAULT_INPUT_RATIO, get_pricing
-from provider_registry import normalize_provider_id, validate_reasoning_effort
+from provider_registry import (
+    normalize_provider_id,
+    validate_provider_model_identity,
+    validate_reasoning_effort,
+)
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -162,7 +166,8 @@ class CreateExecutionRequest(StrictRequest):
         return value
 
     @model_validator(mode="after")
-    def validate_effort_for_model(self) -> CreateExecutionRequest:
+    def validate_provider_model_configuration(self) -> CreateExecutionRequest:
+        validate_provider_model_identity(self.provider, self.exact_provider_model)
         validate_reasoning_effort(self.provider, self.exact_provider_model, self.reasoning_effort)
         return self
 
@@ -204,6 +209,7 @@ class CreateUsageEventRequest(StrictRequest):
 
     @model_validator(mode="after")
     def validate_counter_source(self) -> CreateUsageEventRequest:
+        validate_provider_model_identity(self.provider, self.exact_provider_model)
         if self.provider_counters is not None:
             if not self.provider_counters:
                 raise ValueError("provider_counters must contain at least one counter.")
@@ -303,6 +309,7 @@ class UsageAggregate(BaseModel):
     provider_reported_total_tokens: int | None
     provider_reported_total_tokens_known_sum: int | None
     provider_reported_total_tokens_missing_event_count: int
+    incompatible_usage_event_count: int
     token_semantics: str
     provider_usage_completeness: dict[str, int]
     total_input_tokens: int | None
@@ -519,18 +526,6 @@ def create_execution(
             )
             if prediction is None:
                 raise HTTPException(status_code=404, detail="Prediction not found")
-            prediction_registration = resolve_prediction_registration(prediction.model_alias)
-            if (
-                prediction_registration is not None
-                and prediction_registration.provider != payload.provider
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Prediction estimator is not compatible with the execution provider; "
-                        "create a provider-compatible prediction before starting execution."
-                    ),
-                )
         if payload.parent_execution_id is not None:
             parent = db.scalar(
                 select(ExecutionRecord).where(
@@ -585,7 +580,7 @@ def record_usage_event(
     db: Session = Depends(get_db),  # noqa: B008
 ) -> UsageEventResponse:
     workspace_id = configured_workspace_id()
-    legacy_counters = {
+    legacy_counters: dict[str, int | None] = {
         field: getattr(payload, field)
         for field in (
             "input_tokens",
@@ -660,12 +655,6 @@ def record_usage_event(
                     status_code=409,
                     detail="Usage provider must match the execution record.",
                 )
-            if execution.exact_provider_model != payload.exact_provider_model:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Usage exact model must match the execution record.",
-                )
-
             db.add(event_record)
             db.flush()
         return UsageEventResponse(
@@ -714,23 +703,39 @@ def _aggregate_usage(db: Session, execution: ExecutionRecord) -> tuple[UsageAggr
         )
     )
     event_count = len(events)
-    input_total, input_known, input_missing = _sum_optional_field(events, "input_tokens")
-    output_total, output_known, output_missing = _sum_optional_field(events, "output_tokens")
+    incompatible_count = sum(
+        event.provider != execution.provider
+        or event.exact_provider_model != execution.exact_provider_model
+        for event in events
+    )
+    aggregate_events = [] if incompatible_count else events
+    input_total, input_known, input_missing = _sum_optional_field(aggregate_events, "input_tokens")
+    output_total, output_known, output_missing = _sum_optional_field(
+        aggregate_events, "output_tokens"
+    )
     create_total, create_known, create_missing = _sum_optional_field(
-        events, "cache_creation_input_tokens"
+        aggregate_events, "cache_creation_input_tokens"
     )
-    read_total, read_known, read_missing = _sum_optional_field(events, "cache_read_input_tokens")
-    cached_total, cached_known, cached_missing = _sum_optional_field(events, "cached_input_tokens")
+    read_total, read_known, read_missing = _sum_optional_field(
+        aggregate_events, "cache_read_input_tokens"
+    )
+    cached_total, cached_known, cached_missing = _sum_optional_field(
+        aggregate_events, "cached_input_tokens"
+    )
     reasoning_total, reasoning_known, reasoning_missing = _sum_optional_field(
-        events, "reasoning_tokens"
+        aggregate_events, "reasoning_tokens"
     )
-    tool_total, tool_known, tool_missing = _sum_optional_field(events, "tool_use_prompt_tokens")
+    tool_total, tool_known, tool_missing = _sum_optional_field(
+        aggregate_events, "tool_use_prompt_tokens"
+    )
     provider_total, provider_total_known, provider_total_missing = _sum_optional_field(
-        events, "total_tokens"
+        aggregate_events, "total_tokens"
     )
     semantics = {event.token_semantics for event in events}
     non_null_semantics = {value for value in semantics if value is not None}
-    if len(non_null_semantics) > 1 or (None in semantics and non_null_semantics):
+    if incompatible_count:
+        token_semantics = "mixed_or_unknown"
+    elif len(non_null_semantics) > 1 or (None in semantics and non_null_semantics):
         token_semantics = "mixed_or_unknown"
     elif non_null_semantics:
         token_semantics = next(iter(non_null_semantics))
@@ -741,7 +746,7 @@ def _aggregate_usage(db: Session, execution: ExecutionRecord) -> tuple[UsageAggr
     total_input = None
     total_tokens = None
     if (
-        events
+        aggregate_events
         and execution.provider == "anthropic"
         and input_total is not None
         and create_total is not None
@@ -755,28 +760,41 @@ def _aggregate_usage(db: Session, execution: ExecutionRecord) -> tuple[UsageAggr
         UsageAggregate(
             input_tokens=input_total,
             input_tokens_known_sum=input_known,
-            input_tokens_missing_event_count=input_missing,
+            input_tokens_missing_event_count=(event_count if incompatible_count else input_missing),
             output_tokens=output_total,
             output_tokens_known_sum=output_known,
-            output_tokens_missing_event_count=output_missing,
+            output_tokens_missing_event_count=(
+                event_count if incompatible_count else output_missing
+            ),
             cache_creation_input_tokens=create_total,
             cache_creation_input_tokens_known_sum=create_known,
-            cache_creation_missing_event_count=create_missing,
+            cache_creation_missing_event_count=(
+                event_count if incompatible_count else create_missing
+            ),
             cache_read_input_tokens=read_total,
             cache_read_input_tokens_known_sum=read_known,
-            cache_read_missing_event_count=read_missing,
+            cache_read_missing_event_count=(event_count if incompatible_count else read_missing),
             cached_input_tokens=cached_total,
             cached_input_tokens_known_sum=cached_known,
-            cached_input_tokens_missing_event_count=cached_missing,
+            cached_input_tokens_missing_event_count=(
+                event_count if incompatible_count else cached_missing
+            ),
             reasoning_tokens=reasoning_total,
             reasoning_tokens_known_sum=reasoning_known,
-            reasoning_tokens_missing_event_count=reasoning_missing,
+            reasoning_tokens_missing_event_count=(
+                event_count if incompatible_count else reasoning_missing
+            ),
             tool_use_prompt_tokens=tool_total,
             tool_use_prompt_tokens_known_sum=tool_known,
-            tool_use_prompt_tokens_missing_event_count=tool_missing,
+            tool_use_prompt_tokens_missing_event_count=(
+                event_count if incompatible_count else tool_missing
+            ),
             provider_reported_total_tokens=provider_total,
             provider_reported_total_tokens_known_sum=provider_total_known,
-            provider_reported_total_tokens_missing_event_count=provider_total_missing,
+            provider_reported_total_tokens_missing_event_count=(
+                event_count if incompatible_count else provider_total_missing
+            ),
+            incompatible_usage_event_count=incompatible_count,
             token_semantics=token_semantics,
             provider_usage_completeness=provider_completeness,
             total_input_tokens=total_input,

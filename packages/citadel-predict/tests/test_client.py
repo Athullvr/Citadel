@@ -178,6 +178,49 @@ def test_execution_feedback_methods_use_existing_authenticated_routes():
     }
 
 
+def test_sdk_forwards_provider_counters_effort_and_prediction_provider_context():
+    requests = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode("utf-8")) if request.content else None
+        requests.append((request.method, request.url.path, payload))
+        if request.url.path.endswith("/predictions"):
+            return httpx.Response(201, json={"prediction_id": "prediction-1"})
+        if request.url.path == "/api/executions":
+            return httpx.Response(201, json={"execution_id": "execution-1"})
+        if request.url.path.endswith("/usage"):
+            return httpx.Response(200, json={"recorded": True})
+        return httpx.Response(200, json={"execution": {"status": "started"}})
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as http_client:
+        client = CitadelClient(base_url="http://citadel.test", http_client=http_client)
+        client.create_execution_prediction(
+            "A bounded task",
+            provider="anthropic",
+            exact_provider_model="claude-sonnet-5",
+        )
+        client.create_execution(
+            prediction_id="prediction-1",
+            integration_name="sdk-agent",
+            integration_version="1.0",
+            provider="openai",
+            exact_provider_model="gpt-6-luna",
+            reasoning_effort="high",
+        )
+        client.record_execution_usage(
+            "execution-1",
+            event_id="d2ecb362-3937-4fc2-b3e0-8d6a3fd3fd36",
+            provider="openai",
+            exact_provider_model="gpt-6-luna",
+            provider_counters={"input_tokens": 10, "output_tokens": 4},
+        )
+
+    assert requests[0][2]["provider"] == "anthropic"
+    assert requests[0][2]["exact_provider_model"] == "claude-sonnet-5"
+    assert requests[1][2]["reasoning_effort"] == "high"
+    assert requests[2][2]["provider_counters"] == {"input_tokens": 10, "output_tokens": 4}
+
+
 def test_begin_execution_orchestrates_existing_prediction_execution_and_summary_routes():
     requests = []
 

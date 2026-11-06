@@ -63,9 +63,12 @@ def test_tool_registration(mcp_server):
         assert "use_adaptive_profile" in schemas["begin_execution"]["properties"]
         assert "use_adaptive_profile" not in schemas["begin_execution"]["required"]
         assert "workspace_id" not in schemas["begin_execution"]["properties"]
-        assert {"execution_id", "event_id", "input_tokens", "output_tokens"} <= set(
+        assert {"execution_id", "event_id", "exact_provider_model"} <= set(
             schemas["record_execution_usage"]["required"]
         )
+        assert "input_tokens" not in schemas["record_execution_usage"]["required"]
+        assert "provider_counters" in schemas["record_execution_usage"]["properties"]
+        assert "reasoning_effort" in schemas["begin_execution"]["properties"]
         assert "source" not in schemas["record_execution_usage"]["properties"]
         assert schemas["complete_execution"]["properties"]["status"]["enum"] == [
             "completed",
@@ -305,19 +308,24 @@ def test_execution_tools_validate_provider_counters_and_completion(mcp_server):
                 "output_tokens": 3,
             },
         )
-        unsupported = await _invoke_registered_handler(
-            mcp_server,
-            "record_execution_usage",
-            {
-                "execution_id": _FakeExecutionClient.detail["execution"]["execution_id"],
-                "event_id": "c115e9ac-d80b-4e31-b497-96cc1a85a8b0",
-                "exact_provider_model": "some-model",
-                "input_tokens": 1,
-                "output_tokens": 3,
-                "provider": "other-provider",
-            },
-        )
         with patch("citadel_predict_mcp.server.CitadelClient", _FakeExecutionClient):
+            provider_specific = await _invoke_registered_handler(
+                mcp_server,
+                "record_execution_usage",
+                {
+                    "execution_id": _FakeExecutionClient.detail["execution"]["execution_id"],
+                    "event_id": "b115e9ac-d80b-4e31-b497-96cc1a85a8b0",
+                    "exact_provider_model": "gpt-6-luna",
+                    "provider": "openai",
+                    "provider_counters": {
+                        "input_tokens": 1,
+                        "input_tokens_details.cached_tokens": 0,
+                        "output_tokens": 3,
+                        "output_tokens_details.reasoning_tokens": 0,
+                        "total_tokens": 4,
+                    },
+                },
+            )
             completed = await _invoke_registered_handler(
                 mcp_server,
                 "complete_execution",
@@ -328,7 +336,7 @@ def test_execution_tools_validate_provider_counters_and_completion(mcp_server):
                 },
             )
         assert _tool_json(invalid)["error_type"] == "ValidationError"
-        assert _tool_json(unsupported)["error_type"] == "ValidationError"
+        assert _tool_json(provider_specific)["success"] is True
         assert _tool_json(completed)["status"] == "cancelled"
         assert _tool_json(completed)["usage_completeness"] == "complete"
 

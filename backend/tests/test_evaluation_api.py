@@ -440,7 +440,6 @@ def test_mixed_models_provider_mismatch_and_caller_source_label(evaluation_datab
     finish_execution(evaluation_database, execution["execution_id"], expected_count=2)
     report = summary(evaluation_database)
     assert report["excluded_execution_counts"]["mixed_usage_models"] == 1
-
     another_prediction = insert_prediction(evaluation_database)
     another = insert_execution(evaluation_database, another_prediction.prediction_id)
     with pytest.raises(HTTPException) as error:
@@ -451,6 +450,29 @@ def test_mixed_models_provider_mismatch_and_caller_source_label(evaluation_datab
         )
     assert error.value.status_code == 409
     assert report["provenance_distribution"]["verified_provider"] == 0
+
+
+def test_missing_anthropic_input_counter_is_excluded_instead_of_summed_as_zero(
+    evaluation_database,
+):
+    prediction = insert_prediction(evaluation_database)
+    execution = insert_execution(evaluation_database, prediction.prediction_id)
+    partial = CreateUsageEventRequest(
+        event_id=uuid4(),
+        provider="anthropic",
+        exact_provider_model="claude-sonnet-5",
+        provider_counters={"output_tokens": 5},
+        source="incomplete-counter-set",
+        occurred_at=datetime.now(UTC),
+    )
+    submit_usage(evaluation_database, execution["execution_id"], partial)
+    finish_execution(evaluation_database, execution["execution_id"], expected_count=1)
+
+    report = summary(evaluation_database)
+    assert report["eligible_completed_execution_count"] == 0
+    assert report["excluded_execution_counts"][
+        "missing_required_input_or_output_counter"
+    ] == 1
 
 
 def test_workspace_isolation_and_legacy_unknown_provenance(evaluation_database):

@@ -90,6 +90,7 @@ def _safe_execution_summary(data: dict[str, Any]) -> dict[str, Any]:
                 "provider_reported_total_tokens",
                 "provider_reported_total_tokens_known_sum",
                 "provider_reported_total_tokens_missing_event_count",
+                "incompatible_usage_event_count",
                 "token_semantics",
                 "provider_usage_completeness",
                 "total_input_tokens",
