@@ -23,6 +23,7 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from httpx import Response
 from main import app
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -282,14 +283,14 @@ def test_unverified_synthetic_incomplete_and_repeated_tasks_do_not_activate_prof
         count=30,
         residual=20,
         provenance="synthetic_benchmark",
-        provider_model="claude-sonnet-5-synthetic",
+        provider_model=EXACT_MODEL,
     )
     _insert_history(
         engine,
         count=30,
         residual=20,
         provenance="verified_provider",
-        provider_model="claude-sonnet-5-incomplete",
+        provider_model=EXACT_MODEL,
         expected_event_count=2,
     )
     _insert_history(
@@ -297,7 +298,7 @@ def test_unverified_synthetic_incomplete_and_repeated_tasks_do_not_activate_prof
         count=30,
         residual=20,
         provenance="verified_provider",
-        provider_model="claude-sonnet-5-repeated",
+        provider_model=EXACT_MODEL,
         repeat_task=True,
     )
     _insert_history(
@@ -305,7 +306,7 @@ def test_unverified_synthetic_incomplete_and_repeated_tasks_do_not_activate_prof
         count=30,
         residual=20,
         provenance="verified_provider",
-        provider_model="claude-sonnet-5-contradictory-synthetic",
+        provider_model=EXACT_MODEL,
         synthetic_flag=True,
     )
     monkeypatch.setattr(adaptive_api, "run_predict", lambda *_args, **_kwargs: _model_result())
@@ -324,7 +325,9 @@ def test_unverified_synthetic_incomplete_and_repeated_tasks_do_not_activate_prof
     assert profile["profiles"]["workspace"]["exclusion_counts"]["is_synthetic"] == 60
 
 
-def test_workspace_isolation_and_workspace_fallback(adaptive_client, monkeypatch):
+def test_workspace_isolation_and_requested_model_workspace_cohort(
+    adaptive_client, monkeypatch
+):
     engine = adaptive_client
     _insert_history(
         engine,
@@ -336,7 +339,9 @@ def test_workspace_isolation_and_workspace_fallback(adaptive_client, monkeypatch
     isolated = _adaptive_request(engine)
     assert isolated.status_code == 201, isolated.text
     assert isolated.json()["profile"]["status"] == "unavailable"
+    assert isolated.json()["adjusted_prediction"]["low_tokens"] == 90
     assert isolated.json()["adjusted_prediction"]["expected_tokens"] == 100
+    assert isolated.json()["adjusted_prediction"]["high_tokens"] == 130
 
     _insert_history(
         engine,
@@ -347,10 +352,81 @@ def test_workspace_isolation_and_workspace_fallback(adaptive_client, monkeypatch
     fallback = _adaptive_request(engine)
     assert fallback.status_code == 201, fallback.text
     profile = fallback.json()["profile"]
+    assert profile["status"] == "unavailable"
+    assert profile["fallback_reason"] == "no_evaluator_eligible_history"
+    assert profile["profiles"]["workspace"]["independent_task_count"] == 0
+    assert fallback.json()["adjusted_prediction"]["low_tokens"] == 90
+    assert fallback.json()["adjusted_prediction"]["expected_tokens"] == 100
+    assert fallback.json()["adjusted_prediction"]["high_tokens"] == 130
+
+    _insert_history(engine, count=30, residual=-20)
+    requested_model = _adaptive_request(engine)
+    assert requested_model.status_code == 201, requested_model.text
+    profile = requested_model.json()["profile"]
     assert profile["status"] == "active"
-    assert profile["profile_level"] == "workspace"
-    assert profile["adjustment_tokens"] == -20
-    assert fallback.json()["adjusted_prediction"]["expected_tokens"] == 80
+    assert profile["profile_level"] == "provider_model"
+    # With no cross-model pooling, workspace and provider/model cohorts have
+    # identical eligible evidence; the exact provider/model level is selected.
+    assert profile["profiles"]["workspace"]["status"] == "active"
+    assert profile["profiles"]["workspace"]["independent_task_count"] == 30
+    assert requested_model.json()["adjusted_prediction"]["expected_tokens"] == 80
+
+
+def test_other_model_cannot_make_requested_model_sample_sufficient(
+    adaptive_client, monkeypatch
+):
+    engine = adaptive_client
+    _insert_history(engine, count=29, residual=20)
+    _insert_history(
+        engine,
+        count=30,
+        residual=-20,
+        provider_model="claude-sonnet-5-other",
+    )
+    monkeypatch.setattr(adaptive_api, "run_predict", lambda *_args, **_kwargs: _model_result())
+
+    response = _adaptive_request(engine)
+    assert response.status_code == 201, response.text
+    profile = response.json()["profile"]
+    assert profile["status"] == "insufficient_data"
+    assert profile["fallback_reason"] == "insufficient_independent_tasks"
+    assert profile["profiles"]["provider_model"]["independent_task_count"] == 29
+    assert profile["profiles"]["workspace"]["independent_task_count"] == 29
+    assert response.json()["adjusted_prediction"]["low_tokens"] == 90
+    assert response.json()["adjusted_prediction"]["expected_tokens"] == 100
+    assert response.json()["adjusted_prediction"]["high_tokens"] == 130
+
+
+def test_missing_or_ambiguous_exact_model_cannot_use_other_model_history(
+    adaptive_client, monkeypatch
+):
+    engine = adaptive_client
+    _insert_history(
+        engine,
+        count=30,
+        residual=-20,
+        provider_model="claude-sonnet-5-other",
+    )
+    monkeypatch.setattr(adaptive_api, "run_predict", lambda *_args, **_kwargs: _model_result())
+
+    with pytest.raises(ValidationError):
+        AdaptivePredictionRequest.model_validate(
+            {
+                "task_text": "Review a bounded public topic.",
+                "tools": ["web_search"],
+                "model_id": "claude-sonnet",
+                "provider": "anthropic",
+            }
+        )
+
+    ambiguous = _adaptive_request(engine, exact_provider_model="claude-sonnet")
+    assert ambiguous.status_code == 201, ambiguous.text
+    profile = ambiguous.json()["profile"]
+    assert profile["status"] == "incompatible"
+    assert profile["fallback_reason"] == "exact_provider_model_missing_or_ambiguous"
+    assert ambiguous.json()["adjusted_prediction"]["low_tokens"] == 90
+    assert ambiguous.json()["adjusted_prediction"]["expected_tokens"] == 100
+    assert ambiguous.json()["adjusted_prediction"]["high_tokens"] == 130
 
 
 def test_exact_model_profile_uses_its_own_residuals(adaptive_client, monkeypatch):

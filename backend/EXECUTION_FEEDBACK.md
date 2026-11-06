@@ -269,12 +269,15 @@ and the non-negative lower-bound constraint. Fractional median residuals round
 to the nearest whole token with half values rounded away from zero. Profiles
 older than 180 days are stale and do not adjust estimates.
 
-The exact provider/model profile is preferred; a compatible workspace profile
-is the fallback. Project identity and task category are not stored, so those
-levels are reported unavailable. The global baseline is the unchanged model
-output; Citadel does not pool residuals across workspaces. Status, sample counts,
-provenance counts, exclusion reasons, confidence interval, and fallback reason
-are included in the response.
+All candidate cohorts are scoped to the requested exact provider model and
+matching prediction artifact. The workspace cohort reports the same
+workspace-local compatible evidence; the provider/model profile retains
+selection priority. Residuals from different exact provider model identifiers
+are never pooled without an explicit compatibility policy. Project identity and
+task category are not stored, so those levels are reported unavailable. The
+global baseline is the unchanged model output; Citadel does not pool residuals
+across workspaces. Status, sample counts, provenance counts, exclusion reasons,
+confidence interval, and fallback reason are included in the response.
 
 Configure a stable `CITADEL_TASK_HASH_KEY` to allow exact repeated-task
 deduplication. Without it, task independence is unknown and no profile can

@@ -103,13 +103,12 @@ def _cohort_for_records(
     records: list[_EligibleRecord],
     *,
     expected_artifact_version: str,
-    exact_provider_model: str | None,
+    exact_provider_model: str,
 ) -> _Cohort:
     scoped_records = [
         record
         for record in records
-        if exact_provider_model is None
-        or record.exact_provider_model == exact_provider_model
+        if record.exact_provider_model == exact_provider_model
     ]
     provenance = Counter(record.provenance for record in scoped_records)
     exclusions: Counter[str] = Counter()
@@ -325,6 +324,13 @@ def get_adaptive_profile(
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
         raise ValueError("evaluated_at must include a timezone")
     evaluated_at = evaluated_at.astimezone(UTC)
+    if (
+        not exact_provider_model.strip()
+        or exact_provider_model == model_alias
+    ):
+        return _profile_status_without_query(
+            "exact_provider_model_missing_or_ambiguous", evaluated_at=evaluated_at
+        )
     if provider != SUPPORTED_PROVIDER:
         return _profile_status_without_query(
             "unsupported_provider_token_semantics", evaluated_at=evaluated_at
@@ -368,12 +374,12 @@ def get_adaptive_profile(
     workspace_recent = _cohort_for_records(
         recent_data.completed_records,
         expected_artifact_version=model_artifact_version,
-        exact_provider_model=None,
+        exact_provider_model=exact_provider_model,
     )
     workspace_historical = _cohort_for_records(
         historical_data.completed_records,
         expected_artifact_version=model_artifact_version,
-        exact_provider_model=None,
+        exact_provider_model=exact_provider_model,
     )
     model_recent = _cohort_for_records(
         recent_data.completed_records,

@@ -27,6 +27,7 @@ def _insert_verified_examples(
     count: int,
     residual: int,
     task_prefix: str,
+    exact_model: str = EXACT_MODEL,
 ) -> None:
     artifact_version = _artifact_digest("claude-sonnet")
     assert artifact_version is not None
@@ -60,7 +61,7 @@ def _insert_verified_examples(
                     integration_name="postgres-adaptive-profile-test",
                     integration_version="1.0",
                     provider="anthropic",
-                    exact_provider_model=EXACT_MODEL,
+                    exact_provider_model=exact_model,
                     status="completed",
                     is_synthetic=False,
                     expected_usage_event_count=1,
@@ -76,7 +77,7 @@ def _insert_verified_examples(
                     execution_id=execution_id,
                     workspace_id=workspace_id,
                     provider="anthropic",
-                    exact_provider_model=EXACT_MODEL,
+                    exact_provider_model=exact_model,
                     input_tokens=100 + residual,
                     output_tokens=0,
                     cache_creation_input_tokens=0,
@@ -101,6 +102,14 @@ def test_postgres_profile_uses_eligible_history_and_isolates_workspaces(
         count=30,
         residual=20,
         task_prefix="profile-workspace",
+    )
+    _insert_verified_examples(
+        postgres_engine,
+        workspace_id=workspace_id,
+        count=30,
+        residual=-80,
+        task_prefix="profile-other-model",
+        exact_model="claude-sonnet-5-other",
     )
     _insert_verified_examples(
         postgres_engine,
