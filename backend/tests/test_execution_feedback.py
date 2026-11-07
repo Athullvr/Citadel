@@ -103,16 +103,20 @@ def test_cancelled_status_migration_downgrade_and_reupgrade(tmp_path, monkeypatc
         )
     command.upgrade(config, "head")
     with Session(engine) as db:
-        assert db.get(ExecutionRecord, execution_id).status == "started"
+        restored = db.get(ExecutionRecord, execution_id)
+        assert restored is not None
+        assert restored.status == "started"
     command.downgrade(config, "0002_evaluation_metadata")
     command.upgrade(config, "head")
 
     with engine.connect() as connection:
-        status_check = connection.exec_driver_sql(
+        status_check: str = connection.exec_driver_sql(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='execution_records'"
         ).scalar_one()
     with Session(engine) as db:
-        assert db.get(ExecutionRecord, execution_id).status == "started"
+        restored = db.get(ExecutionRecord, execution_id)
+        assert restored is not None
+        assert restored.status == "started"
     engine.dispose()
     assert "cancelled" in status_check
 
@@ -165,6 +169,7 @@ def test_prediction_snapshot_is_persisted_without_raw_task(execution_client, mon
         assert record.predicted_expected_tokens == data["expected_tokens"]
         assert record.estimated_expected_cost == data["expected_cost_usd"]
         assert record.model_alias == "claude-sonnet"
+        assert record.model_artifact_version is not None
         assert record.model_artifact_version.startswith(
             "frozen-claude-sonnet-bundle@sha256:"
         )
@@ -184,14 +189,14 @@ def test_prediction_snapshot_is_immutable(execution_client, monkeypatch):
 
     with _db_session(monkeypatch) as db:
         record = db.get(PredictionRecord, UUID(created["prediction_id"]))
+        assert record is not None
         record.model_alias = "tampered"
         with pytest.raises(SQLAlchemyError):
             db.commit()
         db.rollback()
-        assert (
-            db.get(PredictionRecord, UUID(created["prediction_id"])).model_alias
-            == "claude-sonnet"
-        )
+        restored = db.get(PredictionRecord, UUID(created["prediction_id"]))
+        assert restored is not None
+        assert restored.model_alias == "claude-sonnet"
 
 
 def test_execution_can_be_created_with_or_without_prediction(execution_client):
@@ -466,11 +471,14 @@ def test_usage_event_rows_are_append_only(execution_client, monkeypatch):
 
     with _db_session(monkeypatch) as db:
         event = db.get(UsageEvent, UUID(payload["event_id"]))
+        assert event is not None
         event.output_tokens = 99
         with pytest.raises(SQLAlchemyError):
             db.commit()
         db.rollback()
-        assert db.get(UsageEvent, UUID(payload["event_id"])).output_tokens == 5
+        restored = db.get(UsageEvent, UUID(payload["event_id"]))
+        assert restored is not None
+        assert restored.output_tokens == 5
 
 
 def test_legacy_prediction_contract_is_unchanged(execution_client):

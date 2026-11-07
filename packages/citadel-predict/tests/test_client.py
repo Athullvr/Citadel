@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -22,7 +23,7 @@ MOCK_PREDICT_RESPONSE = {
 
 
 def test_predict_happy_path():
-    captured_request = {}
+    captured_request: dict[str, Any] = {}
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         captured_request["url"] = str(request.url)
@@ -66,7 +67,7 @@ def test_predict_happy_path():
 
 
 def test_predict_without_auth_header():
-    captured_request = {}
+    captured_request: dict[str, Any] = {}
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         captured_request["headers"] = dict(request.headers)
@@ -116,7 +117,7 @@ def test_client_health():
 
 
 def test_execution_feedback_methods_use_existing_authenticated_routes():
-    requests = []
+    requests: list[tuple[str, str, Any]] = []
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8")) if request.content else None
@@ -179,7 +180,7 @@ def test_execution_feedback_methods_use_existing_authenticated_routes():
 
 
 def test_sdk_forwards_provider_counters_effort_and_prediction_provider_context():
-    requests = []
+    requests: list[tuple[str, str, Any]] = []
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content.decode("utf-8")) if request.content else None
@@ -222,7 +223,7 @@ def test_sdk_forwards_provider_counters_effort_and_prediction_provider_context()
 
 
 def test_begin_execution_orchestrates_existing_prediction_execution_and_summary_routes():
-    requests = []
+    requests: list[tuple[str, str]] = []
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         requests.append((request.method, request.url.path))
@@ -251,7 +252,7 @@ def test_begin_execution_orchestrates_existing_prediction_execution_and_summary_
 
 
 def test_create_adaptive_prediction_uses_authenticated_profile_route():
-    requests = []
+    requests: list[tuple[str, str, Any]] = []
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         requests.append((request.method, request.url.path, request.read()))
@@ -275,7 +276,7 @@ def test_create_adaptive_prediction_uses_authenticated_profile_route():
 
 
 def test_begin_execution_can_opt_into_adaptive_profile():
-    requests = []
+    requests: list[tuple[str, str]] = []
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
         requests.append((request.method, request.url.path))
@@ -312,7 +313,10 @@ def test_begin_execution_can_opt_into_adaptive_profile():
 
 
 def test_adaptive_profile_requires_new_task_text():
-    with httpx.Client(transport=httpx.MockTransport(lambda _request: None)) as http_client:
+    def unexpected_request(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the invalid adaptive request must not reach the transport")
+
+    with httpx.Client(transport=httpx.MockTransport(unexpected_request)) as http_client:
         client = CitadelClient(base_url="http://citadel.test", http_client=http_client)
         try:
             client.begin_execution(

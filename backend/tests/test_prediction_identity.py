@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime, timedelta
+from inspect import unwrap
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,6 +23,7 @@ from execution_feedback import (
 )
 from execution_models import ExecutionRecord, PredictionRecord, UsageEvent, utc_now
 from fastapi import HTTPException
+from fastapi.routing import APIRoute
 from prediction_identity import (
     CLAUDE_TOKEN_TARGET_SEMANTICS,
     IDENTITY_SCHEMA_VERSION,
@@ -193,9 +195,11 @@ def test_new_prediction_persists_legacy_identity_and_unchanged_claude_api(
     monkeypatch.setattr(main, "run_predict", lambda *_args, **_kwargs: result)
 
     route = next(
-        route for route in main.app.routes if getattr(route, "path", None) == "/api/predict"
+        route
+        for route in main.app.routes
+        if isinstance(route, APIRoute) and route.path == "/api/predict"
     )
-    legacy_response = route.endpoint.__wrapped__(
+    legacy_response = unwrap(route.endpoint)(
         None,
         PredictRequest(task_text="legacy request", tools=["web_search"]),
         None,
@@ -266,13 +270,14 @@ def test_usage_identity_cannot_override_execution_and_retry_keeps_first_timestam
             execution_id=execution_id, payload=retry, _auth=None, db=db
         )
         event = db.get(UsageEvent, event_id)
-        execution = db.get(ExecutionRecord, execution_id)
+        execution_row = db.get(ExecutionRecord, execution_id)
     assert retry_result.recorded is False
-    assert event is not None and execution is not None
+    assert event is not None and execution_row is not None
     assert event.occurred_at == first_timestamp
-    assert event.prediction_identity_hash == execution.prediction_identity_hash
+    assert event.prediction_identity_hash == execution_row.prediction_identity_hash
     assert event.identity_status == IDENTITY_STATUS_RESOLVED
     assert event.provider_counters == first.provider_counters
+    assert event.provider_counters is not None
     assert event.provider_counters["thinking_tokens"] == 1
 
 
@@ -525,13 +530,15 @@ def test_identity_migration_preserves_unknown_history_and_round_trips_sqlite(
     command.downgrade(config, "0004_provider_usage_metadata")
     command.upgrade(config, "head")
     with Session(engine) as db:
-        assert db.get(PredictionRecord, prediction_id).identity_status == (
-            IDENTITY_STATUS_LEGACY_UNRESOLVED
-        )
-        assert db.get(ExecutionRecord, execution_id).identity_status == (
-            IDENTITY_STATUS_LEGACY_UNRESOLVED
-        )
-        assert db.get(UsageEvent, event_id).identity_status == IDENTITY_STATUS_LEGACY_UNRESOLVED
+        restored_prediction = db.get(PredictionRecord, prediction_id)
+        restored_execution = db.get(ExecutionRecord, execution_id)
+        restored_event = db.get(UsageEvent, event_id)
+    assert restored_prediction is not None
+    assert restored_execution is not None
+    assert restored_event is not None
+    assert restored_prediction.identity_status == IDENTITY_STATUS_LEGACY_UNRESOLVED
+    assert restored_execution.identity_status == IDENTITY_STATUS_LEGACY_UNRESOLVED
+    assert restored_event.identity_status == IDENTITY_STATUS_LEGACY_UNRESOLVED
     engine.dispose()
 
 
@@ -545,6 +552,6 @@ def test_identity_migration_refuses_to_drop_new_identity(identity_database):
         command.downgrade(Config(str(BACKEND_DIR / "alembic.ini")), "0004_provider_usage_metadata")
     command.upgrade(Config(str(BACKEND_DIR / "alembic.ini")), "head")
     with Session(identity_database) as db:
-        assert db.get(PredictionRecord, prediction_id).prediction_identity_hash == (
-            identity.prediction_identity_hash
-        )
+        restored_prediction = db.get(PredictionRecord, prediction_id)
+    assert restored_prediction is not None
+    assert restored_prediction.prediction_identity_hash == identity.prediction_identity_hash

@@ -171,7 +171,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    identity_rows = bind.execute(
+    identity_rows: int = bind.execute(
         sa.text(
             "SELECT "
             "(SELECT count(*) FROM execution_predictions WHERE "

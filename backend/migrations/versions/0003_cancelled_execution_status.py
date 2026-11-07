@@ -35,7 +35,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    cancelled_count = op.get_bind().execute(
+    cancelled_count: int = op.get_bind().execute(
         sa.text("SELECT count(*) FROM execution_records WHERE status = 'cancelled'")
     ).scalar_one()
     if cancelled_count:

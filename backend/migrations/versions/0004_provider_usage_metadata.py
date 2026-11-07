@@ -84,7 +84,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    null_counters = bind.execute(
+    null_counters: int = bind.execute(
         sa.text(
             "SELECT count(*) FROM usage_events "
             "WHERE input_tokens IS NULL OR output_tokens IS NULL"
@@ -96,7 +96,7 @@ def downgrade() -> None:
             "preserve the original records."
         )
 
-    provider_usage_rows = bind.execute(
+    provider_usage_rows: int = bind.execute(
         sa.text(
             "SELECT count(*) FROM usage_events WHERE "
             "cached_input_tokens IS NOT NULL OR reasoning_tokens IS NOT NULL OR "
@@ -105,7 +105,7 @@ def downgrade() -> None:
             "provider_counters IS NOT NULL"
         )
     ).scalar_one()
-    executions_with_effort = bind.execute(
+    executions_with_effort: int = bind.execute(
         sa.text(
             "SELECT count(*) FROM execution_records WHERE reasoning_effort IS NOT NULL"
         )

@@ -182,7 +182,7 @@ def finish_execution(
     status: str = "completed",
     expected_count: int | None = None,
 ):
-    payload_data = {"status": status}
+    payload_data: dict[str, str | int] = {"status": status}
     if expected_count is not None:
         payload_data["expected_usage_event_count"] = expected_count
     payload = CompleteExecutionRequest.model_validate(payload_data)
@@ -324,7 +324,8 @@ def test_negative_expected_count_is_rejected_and_old_completion_shape_is_valid(
     assert detail.usage_completeness == "unknown"
     with Session(evaluation_database) as db:
         stored = db.get(ExecutionRecord, execution["execution_id"])
-        assert stored.expected_usage_event_count is None
+    assert stored is not None
+    assert stored.expected_usage_event_count is None
     assert summary(evaluation_database)["completeness_distribution"]["unknown"] == 1
 
 

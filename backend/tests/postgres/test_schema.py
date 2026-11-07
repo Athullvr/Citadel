@@ -81,9 +81,15 @@ def _insert_ledger_rows(engine):
             )
         )
         db.commit()
-        assert db.get(PredictionRecord, prediction_id).prediction_id == prediction_id
-        assert db.get(ExecutionRecord, execution_id).execution_id == execution_id
-        assert db.get(UsageEvent, event_id).event_id == event_id
+        stored_prediction = db.get(PredictionRecord, prediction_id)
+        stored_execution = db.get(ExecutionRecord, execution_id)
+        stored_usage = db.get(UsageEvent, event_id)
+        assert stored_prediction is not None
+        assert stored_execution is not None
+        assert stored_usage is not None
+        assert stored_prediction.prediction_id == prediction_id
+        assert stored_execution.execution_id == execution_id
+        assert stored_usage.event_id == event_id
     return prediction_id, execution_id, event_id
 
 
@@ -246,12 +252,18 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
                 connection.execute(statement, {"id": parameter})
 
     with Session(postgres_engine) as db:
-        assert db.get(PredictionRecord, prediction_id).model_alias == "claude-sonnet"
+        stored_prediction = db.get(PredictionRecord, prediction_id)
+        assert stored_prediction is not None
+        assert stored_prediction.model_alias == "claude-sonnet"
         stored_usage = db.get(UsageEvent, event_id)
+        assert stored_usage is not None
         assert stored_usage.output_tokens == 30
+        assert stored_usage.provider_counters is not None
         assert stored_usage.provider_counters["thinking_tokens"] == 2
         assert stored_usage.token_semantics == "anthropic.messages.cache_exclusive_input.v1"
-        assert db.get(ExecutionRecord, execution_id).reasoning_effort == "high"
+        stored_execution = db.get(ExecutionRecord, execution_id)
+        assert stored_execution is not None
+        assert stored_execution.reasoning_effort == "high"
 
         db.add(
             ExecutionRecord(
@@ -269,6 +281,7 @@ def test_postgres_migration_has_native_types_constraints_indexes_and_triggers(
         db.rollback()
 
         execution = db.get(ExecutionRecord, execution_id)
+        assert execution is not None
         execution.expected_usage_event_count = -1
         with pytest.raises(IntegrityError):
             db.commit()

@@ -8,6 +8,7 @@ from citadel_predict.errors import (
     CitadelBadRequestError,
     CitadelValidationError,
 )
+from fastapi import FastAPI
 from starlette.testclient import TestClient
 
 # Ensure backend can be imported for integration testing
@@ -15,13 +16,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 sys.path.insert(0, str(REPO_ROOT / "data_collection"))
 
+app: FastAPI | None
 try:
-    from main import app
+    from main import app as backend_app
+
+    app = backend_app
 except ImportError:
     app = None
 
 @pytest.mark.skipif(app is None, reason="FastAPI backend app not importable")
 def test_integration_live_backend_happy_path():
+    assert app is not None
     with TestClient(app) as test_client:
         client = CitadelClient(
             base_url="http://testserver",
@@ -42,6 +47,7 @@ def test_integration_live_backend_happy_path():
 
 @pytest.mark.skipif(app is None, reason="FastAPI backend app not importable")
 def test_integration_live_backend_auth(monkeypatch):
+    assert app is not None
     monkeypatch.setenv("CITADEL_API_KEY", "prod-secret-key-12345")
 
     # 1. With invalid key -> raises CitadelAuthError
@@ -80,6 +86,7 @@ def test_integration_live_backend_auth(monkeypatch):
 
 @pytest.mark.skipif(app is None, reason="FastAPI backend app not importable")
 def test_integration_live_backend_validation():
+    assert app is not None
     with TestClient(app) as test_client:
         client = CitadelClient(
             base_url="http://testserver",

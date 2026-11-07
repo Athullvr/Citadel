@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 IDENTITY_SCHEMA_VERSION = "citadel.prediction-identity.v1"
-IDENTITY_STATUS_RESOLVED = "resolved"
-IDENTITY_STATUS_LEGACY_UNRESOLVED = "legacy_unresolved"
-IDENTITY_STATUS_UNLINKED = "unlinked"
+IDENTITY_STATUS_RESOLVED: Final = "resolved"
+IDENTITY_STATUS_LEGACY_UNRESOLVED: Final = "legacy_unresolved"
+IDENTITY_STATUS_UNLINKED: Final = "unlinked"
 PredictionIdentityStatus = Literal["resolved", "legacy_unresolved"]
 
 # This is the target used by the frozen training rows: Anthropic input_tokens

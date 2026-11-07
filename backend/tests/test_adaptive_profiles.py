@@ -26,6 +26,7 @@ from main import app
 from prediction_identity import (
     CLAUDE_TOKEN_TARGET_SEMANTICS,
     IDENTITY_STATUS_LEGACY_UNRESOLVED,
+    PredictionIdentityStatus,
     make_prediction_identity,
 )
 from pydantic import ValidationError
@@ -55,7 +56,9 @@ def _test_prediction_identity(payload):
     artifact_digest = _artifact_digest("claude-sonnet")
     assert artifact_digest is not None
     artifact_sha256 = artifact_digest.removeprefix("sha256:")
-    status = "resolved" if payload.exact_provider_model else IDENTITY_STATUS_LEGACY_UNRESOLVED
+    status: PredictionIdentityStatus = (
+        "resolved" if payload.exact_provider_model else IDENTITY_STATUS_LEGACY_UNRESOLVED
+    )
     return make_prediction_identity(
         identity_status=status,
         provider=payload.provider or "anthropic",
